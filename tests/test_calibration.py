@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from heart_measure.calibration import CalibrationError, calibrate
+from specimen_measure.calibration import CalibrationError, calibrate
 from .synthetic import make_synthetic_photo
 
 

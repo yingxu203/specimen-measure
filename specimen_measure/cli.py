@@ -1,7 +1,7 @@
 """Command-line entry point: batch-measure every specimen photo in a folder.
 
 Usage:
-    python -m heart_measure.cli --input-dir "/path/to/photos" --output-dir ./results
+    python -m specimen_measure.cli --input-dir "/path/to/photos" --output-dir ./results
 """
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def run(
         print(f"{n_failed} image(s) failed — see the 'error' column in measurements.csv.")
     flagged = ok[ok["touches_frame_edge"]]
     if len(flagged):
-        print(f"{len(flagged)} image(s) have a heart mask touching the frame edge — "
+        print(f"{len(flagged)} image(s) have a specimen mask touching the frame edge — "
               f"worth a visual check (possible crop/clipping).")
     low_conf = ok[ok["low_confidence_calibration"]]
     if len(low_conf):

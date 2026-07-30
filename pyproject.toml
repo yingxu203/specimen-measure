@@ -1,7 +1,7 @@
 [project]
-name = "heart-measure"
+name = "specimen-measure"
 version = "0.1.0"
-description = "Scale-calibrated morphometry for photographed whole-heart specimens"
+description = "Scale-calibrated morphometry for photographed excised organ/tumor specimens"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -20,11 +20,11 @@ dependencies = [
 dev = ["pytest>=7.0"]
 
 [project.scripts]
-heart-measure = "heart_measure.cli:main"
+specimen-measure = "specimen_measure.cli:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["heart_measure*"]
+include = ["specimen_measure*"]

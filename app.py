@@ -1,5 +1,6 @@
-"""heart-measure UI: a point-and-click front end for the batch measurement
-pipeline, so anyone in the lab can run it without touching a command line.
+"""specimen-measure UI: a point-and-click front end for the batch
+measurement pipeline, so anyone in the lab can run it without touching a
+command line.
 
 Launch with:
     streamlit run app.py
@@ -17,10 +18,10 @@ from PIL import Image, ImageDraw
 from skimage import measure as sk_measure
 from streamlit_image_coordinates import streamlit_image_coordinates
 
-from heart_measure.cli import DEFAULT_PATTERN, find_images, summarize_by_animal_and_view
-from heart_measure.measure import get_rotated_crop, measure_file
+from specimen_measure.cli import DEFAULT_PATTERN, find_images, summarize_by_animal_and_view
+from specimen_measure.measure import get_rotated_crop, measure_file
 
-st.set_page_config(page_title="heart-measure", layout="wide")
+st.set_page_config(page_title="specimen-measure", layout="wide")
 
 ORIENT_OPTIONS = {
     "Heart (atria up, apex down)": "apex_down",
@@ -35,7 +36,7 @@ for key, default in [
     if key not in st.session_state:
         st.session_state[key] = default
 
-st.title("heart-measure")
+st.title("specimen-measure")
 st.caption(
     "Ruler-calibrated long-axis / short-axis / area measurement for excised organ or tumor "
     "specimen photos. Each overlay is rotated to a standard orientation for easy side-by-side "
@@ -62,7 +63,7 @@ if mode == "Upload photos":
         type=["tif", "tiff"], accept_multiple_files=True,
     )
     if uploaded:
-        upload_dir = Path(tempfile.mkdtemp(prefix="heart_measure_upload_"))
+        upload_dir = Path(tempfile.mkdtemp(prefix="specimen_measure_upload_"))
         for uf in uploaded:
             dest = upload_dir / uf.name
             dest.write_bytes(uf.getbuffer())
@@ -82,7 +83,7 @@ else:
 if image_paths:
     st.write(f"Found **{len(image_paths)}** image(s).")
     if st.button("Run measurement", type="primary"):
-        overlay_dir = Path(tempfile.mkdtemp(prefix="heart_measure_overlays_"))
+        overlay_dir = Path(tempfile.mkdtemp(prefix="specimen_measure_overlays_"))
         rows = []
         overlay_paths: dict[str, Path] = {}
         path_by_name: dict[str, Path] = {}
@@ -148,7 +149,7 @@ if df is not None:
     touching = ok[ok["touches_frame_edge"]]
     if len(touching):
         st.warning(
-            f"{len(touching)} image(s) have a heart mask touching the frame edge — "
+            f"{len(touching)} image(s) have a specimen mask touching the frame edge — "
             f"worth a visual check for possible cropping: " + ", ".join(touching["filename"])
         )
 
@@ -188,7 +189,7 @@ if df is not None:
 
         cache_key = (choice, flip)
         if cache_key not in st.session_state.render_cache:
-            tmp_dir = Path(tempfile.mkdtemp(prefix="heart_measure_render_"))
+            tmp_dir = Path(tempfile.mkdtemp(prefix="specimen_measure_render_"))
             tmp_overlay = tmp_dir / f"{Path(choice).stem}_overlay.png"
             measure_file(
                 orig_path, overlay_path=tmp_overlay, orient_mode=orient_mode,
@@ -258,7 +259,7 @@ if df is not None:
             except Exception as exc:  # noqa: BLE001
                 st.error(f"Can't build a manual-measurement canvas for this image: {exc}")
 
-        zip_base = Path(tempfile.mkdtemp(prefix="heart_measure_zip_")) / "overlays"
+        zip_base = Path(tempfile.mkdtemp(prefix="specimen_measure_zip_")) / "overlays"
         zip_path = shutil.make_archive(str(zip_base), "zip", overlay_paths[choice].parent)
         with open(zip_path, "rb") as fh:
             st.download_button(

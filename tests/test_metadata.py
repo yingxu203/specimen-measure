@@ -1,4 +1,4 @@
-from heart_measure.metadata import parse_filename
+from specimen_measure.metadata import parse_filename
 
 
 def test_parses_typical_filename():

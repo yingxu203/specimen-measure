@@ -1,7 +1,7 @@
 import pytest
 
-from heart_measure.calibration import calibrate
-from heart_measure.segmentation import segment_heart
+from specimen_measure.calibration import calibrate
+from specimen_measure.segmentation import segment_heart
 from .synthetic import make_synthetic_photo
 
 
