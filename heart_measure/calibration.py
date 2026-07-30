@@ -1,3 +1,5 @@
+Created on 7/30/26
+@author: yingxu203
 """Detect the ruler panel in a specimen photo and derive a pixels-per-mm scale
 from the spacing between its millimeter tick marks.
 
