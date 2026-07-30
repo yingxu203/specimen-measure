@@ -61,6 +61,19 @@ For each image:
    would actually measure a specimen with a ruler held straight after
    orienting it. Area is simply the segmented pixel count (unaffected by
    rotation), converted with the same per-image scale.
+
+   For `apex_down`, width gets one more correction (`rotate.py`'s
+   `_core_body_width_row`): a naive bounding-box width consistently
+   overshot hand-annotated reference measurements by 4-18%, always in the
+   same direction, because a heart's auricle sticks out sideways near the
+   base and widens exactly the rows it occupies. The row-by-row width
+   profile is scanned for where it rises to a peak (auricle-inclusive) and
+   then drops sharply once the appendage ends; the width just past that
+   drop is used instead, matching hand annotations within ~1-8% (only the
+   single most extreme auricle in the reference set was off by ~12%) with
+   no systematic bias in either direction. This step is skipped for
+   `vertical`/`horizontal` orientation modes, since it assumes a heart-like
+   base/apex distinction that doesn't apply to round tumors or other organs.
 5. **Overlay drawing** (`measure.py`) — the rotated crop gets the specimen
    outline (green), long axis line labeled **L** and short axis line
    labeled **W**, both perfectly straight/axis-aligned. Optionally colored by
@@ -78,6 +91,13 @@ automatic result:
 
 - Every result gets a `touches_frame_edge` and `low_confidence_calibration`
   QC flag (see below) so you know which rows deserve a closer look.
+- [`annotate_specimen.py`](annotate_specimen.py) lets you build a ground-truth
+  reference set: click 2 points for length and 2 for width on a folder of
+  images (matplotlib window, `u` = undo, `q` = save + next, resumable), saved
+  to `annotation_reference/reference_annotations.csv`. This is how the
+  width-correction heuristic above was validated and tuned — run it again on
+  new example images any time the automatic measurement looks off, to check
+  whether it's really wrong and by how much.
 - The UI lets you flip a single image's orientation with one checkbox, and
   lets you manually click two points on the (rotated) image to measure
   length or width directly — it uses the same per-image px/mm scale, so a
