@@ -1,3 +1,5 @@
+Created on 7/30/26
+@author: yingxu203
 """Per-image measurement: load a TIFF, calibrate its ruler, segment the heart,
 and convert axis lengths from pixels to millimeters.
 """
