@@ -78,6 +78,13 @@ def load_image(path: Path) -> np.ndarray:
     return arr
 
 
+def _split_out_ruler(img: np.ndarray, mask: np.ndarray, cal: Calibration) -> tuple[np.ndarray, np.ndarray]:
+    """Crop the ruler panel out of `img`/`mask`, keeping only the specimen side."""
+    if cal.ruler_side == "right":
+        return img[:, :cal.ruler_edge_px], mask[:, :cal.ruler_edge_px]
+    return img[:, cal.ruler_edge_px:], mask[:, cal.ruler_edge_px:]
+
+
 def get_rotated_crop(
     path: Path,
     ruler_side: str = "auto",
@@ -93,12 +100,7 @@ def get_rotated_crop(
     gray = img[:, :, :3].mean(axis=2)
     cal = calibrate(gray, ruler_side=ruler_side)
     region = segment_heart(img, cal.ruler_side, cal.ruler_edge_px)
-    if cal.ruler_side == "right":
-        specimen_img = img[:, :cal.ruler_edge_px]
-        specimen_mask = region.mask[:, :cal.ruler_edge_px]
-    else:
-        specimen_img = img[:, cal.ruler_edge_px:]
-        specimen_mask = region.mask[:, cal.ruler_edge_px:]
+    specimen_img, specimen_mask = _split_out_ruler(img, region.mask, cal)
     crop = rotate_for_display(specimen_img, specimen_mask, orient_mode=orient_mode, manual_flip=manual_flip)
     return crop, cal
 
@@ -157,14 +159,22 @@ def measure_file(
             touches_frame_edge=None, low_confidence_calibration=low_confidence, **base_fields,
         )
 
-    long_axis_mm = region.major_axis_length_px / cal.px_per_mm
-    short_axis_mm = region.minor_axis_length_px / cal.px_per_mm
+    # Measurement is taken *after* rotating to the standard orientation: a
+    # straight vertical/horizontal extent (see rotate.axis_aligned_extent)
+    # rather than a caliper line between two specific extreme pixels, which
+    # for an asymmetric shape can visibly tilt even once "straightened".
+    specimen_img, specimen_mask = _split_out_ruler(img, region.mask, cal)
+    crop = rotate_for_display(
+        specimen_img, specimen_mask, orient_mode=orient_mode, manual_flip=manual_flip,
+    )
+    long_axis_mm = crop.axes.major_axis_length_px / cal.px_per_mm
+    short_axis_mm = crop.axes.minor_axis_length_px / cal.px_per_mm
     area_mm2 = region.area_px / (cal.px_per_mm ** 2)
 
     if overlay_path is not None:
-        _save_overlay(
-            img, cal, region, info.genotype, long_axis_mm, short_axis_mm, area_mm2, overlay_path,
-            orient_mode=orient_mode, use_genotype_colors=use_genotype_colors, manual_flip=manual_flip,
+        _draw_overlay(
+            crop, cal, info.genotype, long_axis_mm, short_axis_mm, area_mm2, overlay_path,
+            use_genotype_colors=use_genotype_colors,
         )
 
     return MeasurementResult(
@@ -176,38 +186,22 @@ def measure_file(
     )
 
 
-def _save_overlay(
-    img: np.ndarray,
+def _draw_overlay(
+    crop: RotatedCrop,
     cal: Calibration,
-    region: HeartRegion,
     genotype: str | None,
     long_axis_mm: float,
     short_axis_mm: float,
     area_mm2: float,
     out_path: Path,
-    orient_mode: OrientMode = "apex_down",
     use_genotype_colors: bool = True,
-    manual_flip: bool = False,
 ) -> None:
-    """Draw the specimen outline and axis lines on a copy of the specimen
-    crop that has been rotated to a standard orientation (see `orient_mode`),
-    for easy visual comparison across many photos. The ruler is cropped out
-    of this view -- it isn't needed for the drawing, and the displayed
-    numbers (computed from the original, unrotated measurement) are the
-    authoritative ones regardless of the rotation.
+    """Draw the specimen outline and axis lines on an already-rotated crop
+    (see `rotate_for_display`/`orient_mode`), for easy visual comparison
+    across many photos.
     """
     from PIL import Image, ImageDraw
     from skimage import measure as sk_measure
-
-    w = img.shape[1]
-    if cal.ruler_side == "right":
-        specimen_img = img[:, :cal.ruler_edge_px]
-        specimen_mask = region.mask[:, :cal.ruler_edge_px]
-    else:
-        specimen_img = img[:, cal.ruler_edge_px:]
-        specimen_mask = region.mask[:, cal.ruler_edge_px:]
-
-    crop = rotate_for_display(specimen_img, specimen_mask, orient_mode=orient_mode, manual_flip=manual_flip)
 
     pil = Image.fromarray(crop.image).convert("RGB")
     draw = ImageDraw.Draw(pil)

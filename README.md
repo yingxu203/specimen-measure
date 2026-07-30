@@ -36,20 +36,11 @@ For each image:
    brightness but still stands out clearly from a near-black background in
    at least one color channel. Otsu thresholding + morphological cleanup +
    largest-connected-component selection isolates the specimen.
-3. **Measurement** (`segmentation.py`'s `compute_axes`) — long/short axis
-   length is a true caliper-style measurement: every foreground pixel is
-   projected onto the shape's principal-axis directions purely to *identify*
-   the two most extreme pixels, and the line drawn/reported is the actual
-   distance between those two real pixels — not an idealized point on the
-   centroid line, which (for a notched/asymmetric shape) can visibly fall
-   short of or poke past the true boundary. Area is simply the segmented
-   pixel count, converted with the same per-image scale.
-4. **Display rotation** ([`specimen_measure/rotate.py`](specimen_measure/rotate.py)) — for the overlay
-   image only (not the underlying measurement, which is rotation-invariant),
-   the specimen crop is rotated to a standard orientation and tightly
-   cropped, so overlays are easy to flip through and compare regardless of
-   how the specimen happened to sit in the original photo. Three
-   `orient_mode` options:
+3. **Rotation** ([`specimen_measure/rotate.py`](specimen_measure/rotate.py)) — the specimen crop is
+   rotated (via `compute_axes`' principal-axis orientation) to a standard
+   orientation and tightly cropped, so measurements and overlays are
+   consistent and easy to compare regardless of how the specimen happened to
+   sit in the original photo. Three `orient_mode` options:
    - `apex_down` (default): long axis vertical, then flipped if needed so
      the wider/notched end (a heart's base/atria) is on top and the
      tapering end (apex) is on the bottom. Uses a convex-hull-deficit
@@ -59,12 +50,24 @@ For each image:
    - `vertical`: long axis vertical, no flip — for tumors/other organs with
      no "this end goes on top" convention.
    - `horizontal`: long axis horizontal, no flip.
+4. **Measurement** (`rotate.py`'s `axis_aligned_extent`) — taken *after*
+   rotation, as the straight vertical extent (height) and horizontal extent
+   (width) of the rotated, axis-aligned bounding box — not a caliper line
+   between two specific extreme pixels, which for an asymmetric/notched
+   shape can visibly tilt even after "straightening" the specimen, since the
+   two extremes along the principal axis are often not on the same
+   vertical/horizontal line. A straight bounding-box extent is also more
+   forgiving of small rotation-angle imperfections and matches how someone
+   would actually measure a specimen with a ruler held straight after
+   orienting it. Area is simply the segmented pixel count (unaffected by
+   rotation), converted with the same per-image scale.
 5. **Overlay drawing** (`measure.py`) — the rotated crop gets the specimen
    outline (green), long axis line labeled **L** and short axis line
-   labeled **W**. Optionally colored by a heart-study genotype convention
-   (**red `#FF2C2C`** for OX/OF/OM animals, **blue `#0000FF`** for WT/WF/WM
-   animals) — toggle this off for other specimen types — plus a text label
-   with the long/short/area/scale values.
+   labeled **W**, both perfectly straight/axis-aligned. Optionally colored by
+   a heart-study genotype convention (**red `#FF2C2C`** for OX/OF/OM
+   animals, **blue `#0000FF`** for WT/WF/WM animals) — toggle this off for
+   other specimen types — plus a text label with the long/short/area/scale
+   values.
 
 ## Manual correction
 

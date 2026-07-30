@@ -39,12 +39,6 @@ class AxesInfo:
 class HeartRegion:
     mask: np.ndarray            # full-image boolean mask of the specimen
     area_px: float
-    major_axis_length_px: float
-    minor_axis_length_px: float
-    major_endpoints: tuple[Point, Point]
-    minor_endpoints: tuple[Point, Point]
-    centroid: tuple[float, float]   # (row, col)
-    orientation_rad: float
     touches_frame_edge: bool        # QC flag: mask touches top/bottom/near edge
 
 
@@ -152,8 +146,6 @@ def segment_heart(
     full_mask = np.zeros((h, w), dtype=bool)
     full_mask[:, col_offset:col_offset + region.shape[1]] = labeled == biggest.label
 
-    axes = compute_axes(full_mask)
-
     min_row, min_col, max_row, max_col = biggest.bbox
     min_col += col_offset
     max_col += col_offset
@@ -168,11 +160,5 @@ def segment_heart(
     return HeartRegion(
         mask=full_mask,
         area_px=float(biggest.area),
-        major_axis_length_px=axes.major_axis_length_px,
-        minor_axis_length_px=axes.minor_axis_length_px,
-        major_endpoints=axes.major_endpoints,
-        minor_endpoints=axes.minor_endpoints,
-        centroid=(biggest.centroid[0], biggest.centroid[1] + col_offset),
-        orientation_rad=float(biggest.orientation),
         touches_frame_edge=bool(touches_edge),
     )

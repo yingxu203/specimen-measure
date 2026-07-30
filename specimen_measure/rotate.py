@@ -39,6 +39,37 @@ def _rotation_degrees(orientation_rad: float, target_deg: float) -> float:
     return target_deg - math.degrees(orientation_rad)
 
 
+def axis_aligned_extent(mask: np.ndarray) -> AxesInfo:
+    """Measure a mask's straight vertical/horizontal extent (an axis-aligned
+    bounding box), meant to be called *after* rotating the mask to a
+    standard orientation.
+
+    `compute_axes` connects the two most-extreme pixels found by projecting
+    onto the principal-axis directions -- exactly correct as a caliper
+    measurement, but for an asymmetric shape those two pixels are often not
+    on the same vertical/horizontal line, so the drawn line visibly tilts
+    even after rotating the shape "straight". A straight height/width
+    measurement is more forgiving of small rotation-angle imperfections and
+    matches how someone would actually measure a specimen with a ruler held
+    straight after orienting it: total height, total width.
+    """
+    rows = np.nonzero(np.any(mask, axis=1))[0]
+    cols = np.nonzero(np.any(mask, axis=0))[0]
+    r0, r1 = float(rows[0]), float(rows[-1])
+    c0, c1 = float(cols[0]), float(cols[-1])
+    cx = (c0 + c1) / 2
+    cy = (r0 + r1) / 2
+
+    return AxesInfo(
+        centroid_xy=(cx, cy),
+        orientation_rad=0.0,
+        major_endpoints=((cx, r0), (cx, r1)),   # vertical line
+        minor_endpoints=((c0, cy), (c1, cy)),   # horizontal line
+        major_axis_length_px=r1 - r0,
+        minor_axis_length_px=c1 - c0,
+    )
+
+
 def _base_end_is_at_top(mask: np.ndarray) -> bool:
     """Heuristic for which end of a *vertically-oriented* mask is the "base"
     (e.g. a heart's atria/auricles) versus the "apex".
@@ -123,5 +154,5 @@ def rotate_for_display(
         cropped_img = np.flipud(cropped_img)
         cropped_mask = np.flipud(cropped_mask)
 
-    cropped_axes = compute_axes(cropped_mask)
+    cropped_axes = axis_aligned_extent(cropped_mask)
     return RotatedCrop(image=cropped_img, mask=cropped_mask, axes=cropped_axes, flipped=want_flip)
