@@ -10,3 +10,7 @@ venv/
 # Local run output (specimen photos and derived measurements are not part of the repo)
 results/
 .DS_Store
+
+# Local specimen images and your reference annotations -- not part of the repo
+examples_to_annotate/
+annotation_reference/
