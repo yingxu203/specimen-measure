@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .contact_sheet import build_overlay_pdf
 from .measure import MIN_CONFIDENT_TICKS, measure_file
 from .rotate import OrientMode
 
@@ -64,6 +65,7 @@ def run(
     overlay_dir = output_dir / "overlays"
 
     rows = []
+    overlay_paths = []
     for path in files:
         overlay_path = overlay_dir / f"{path.stem}_overlay.png" if overlays else None
         result = measure_file(
@@ -73,6 +75,8 @@ def run(
         rows.append(result.to_row())
         status = "ok" if result.ok else f"FAILED: {result.error}"
         print(f"{path.name}: {status}")
+        if overlay_path is not None and overlay_path.exists():
+            overlay_paths.append(overlay_path)
 
     df = pd.DataFrame(rows)
     df.to_csv(output_dir / "measurements.csv", index=False)
@@ -98,6 +102,11 @@ def run(
     summary = summarize_by_animal_and_view(df)
     if len(summary):
         summary.to_csv(output_dir / "summary_by_animal_and_view.csv", index=False)
+
+    if overlay_paths:
+        pdf_path = output_dir / "overlays_combined.pdf"
+        build_overlay_pdf(overlay_paths, pdf_path)
+        print(f"\nAll {len(overlay_paths)} overlay(s) combined into {pdf_path} for easy scrolling review.")
 
     return df
 

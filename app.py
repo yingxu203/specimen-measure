@@ -19,6 +19,7 @@ from skimage import measure as sk_measure
 from streamlit_image_coordinates import streamlit_image_coordinates
 
 from specimen_measure.cli import DEFAULT_PATTERN, find_images, summarize_by_animal_and_view
+from specimen_measure.contact_sheet import build_overlay_pdf
 from specimen_measure.measure import get_rotated_crop, measure_file
 
 st.set_page_config(page_title="specimen-measure", layout="wide")
@@ -259,10 +260,20 @@ if df is not None:
             except Exception as exc:  # noqa: BLE001
                 st.error(f"Can't build a manual-measurement canvas for this image: {exc}")
 
+        col_zip, col_pdf = st.columns(2)
+
         zip_base = Path(tempfile.mkdtemp(prefix="specimen_measure_zip_")) / "overlays"
         zip_path = shutil.make_archive(str(zip_base), "zip", overlay_paths[choice].parent)
         with open(zip_path, "rb") as fh:
-            st.download_button(
+            col_zip.download_button(
                 "Download all overlay images (.zip)", fh.read(),
                 file_name="overlays.zip", mime="application/zip",
+            )
+
+        pdf_path = Path(tempfile.mkdtemp(prefix="specimen_measure_pdf_")) / "overlays_combined.pdf"
+        build_overlay_pdf(list(overlay_paths.values()), pdf_path)
+        with open(pdf_path, "rb") as fh:
+            col_pdf.download_button(
+                "Download all overlays as one scrollable PDF", fh.read(),
+                file_name="overlays_combined.pdf", mime="application/pdf",
             )
