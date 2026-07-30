@@ -1,3 +1,5 @@
+Created on 7/30/26
+@author: yingxu203
 """Segment the heart specimen from its dark background.
 
 The specimen tissue (pale ventricle, red atria/vessels, white fibrous rim) is
