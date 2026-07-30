@@ -1,5 +1,5 @@
-Created on 7/30/26
-@author: yingxu203
+# Created on 7/30/26
+# @author: yingxu203
 """Best-effort extraction of experiment metadata from specimen photo filenames.
 
 These filenames were typed by hand across many sessions and are not fully
