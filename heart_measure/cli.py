@@ -20,6 +20,32 @@ def find_images(input_dir: Path, pattern: str) -> list[Path]:
     return sorted(p for p in input_dir.rglob(pattern) if p.is_file())
 
 
+def summarize_by_animal_and_view(df: pd.DataFrame) -> pd.DataFrame:
+    """Mean +/- std per (genotype, treatment, animal_id, view).
+
+    Grouping includes `view` so FRONT and BACK photos of the same animal are
+    always summarized separately, never pooled together -- a front photo's
+    apparent long/short axis isn't directly comparable to a back photo's.
+    """
+    ok = df[df["ok"]]
+    if not len(ok) or not ok["animal_id"].notna().any():
+        return pd.DataFrame()
+    return (
+        ok.dropna(subset=["animal_id"])
+        .groupby(["genotype", "treatment", "animal_id", "view"], dropna=False)
+        .agg(
+            n=("long_axis_mm", "size"),
+            long_axis_mm_mean=("long_axis_mm", "mean"),
+            long_axis_mm_std=("long_axis_mm", "std"),
+            short_axis_mm_mean=("short_axis_mm", "mean"),
+            short_axis_mm_std=("short_axis_mm", "std"),
+            area_mm2_mean=("area_mm2", "mean"),
+            area_mm2_std=("area_mm2", "std"),
+        )
+        .reset_index()
+    )
+
+
 def run(input_dir: Path, output_dir: Path, pattern: str, ruler_side: str, overlays: bool) -> pd.DataFrame:
     files = find_images(input_dir, pattern)
     if not files:
@@ -57,19 +83,8 @@ def run(input_dir: Path, output_dir: Path, pattern: str, ruler_side: str, overla
         for fn in low_conf["filename"]:
             print(f"    {fn}")
 
-    if len(ok) and ok["animal_id"].notna().any():
-        summary = (
-            ok.dropna(subset=["animal_id"])
-            .groupby(["genotype", "treatment", "animal_id", "view"], dropna=False)
-            .agg(
-                n=("long_axis_mm", "size"),
-                long_axis_mm_mean=("long_axis_mm", "mean"),
-                long_axis_mm_std=("long_axis_mm", "std"),
-                short_axis_mm_mean=("short_axis_mm", "mean"),
-                short_axis_mm_std=("short_axis_mm", "std"),
-            )
-            .reset_index()
-        )
+    summary = summarize_by_animal_and_view(df)
+    if len(summary):
         summary.to_csv(output_dir / "summary_by_animal_and_view.csv", index=False)
 
     return df

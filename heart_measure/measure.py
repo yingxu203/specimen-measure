@@ -3,7 +3,6 @@ and convert axis lengths from pixels to millimeters.
 """
 from __future__ import annotations
 
-import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -12,7 +11,16 @@ import tifffile
 
 from .calibration import Calibration, CalibrationError, calibrate
 from .metadata import SpecimenInfo, parse_filename
+from .rotate import rotate_to_horizontal
 from .segmentation import HeartRegion, SegmentationError, segment_heart
+
+# Axis-line color by genotype, per lab convention: OX/OF/OM animals are OX
+# genotype (red), WT/WF/WM animals are WT genotype (blue).
+GENOTYPE_COLORS: dict[str, tuple[int, int, int]] = {
+    "OX": (255, 44, 44),   # #FF2C2C
+    "WT": (0, 0, 255),     # #0000FF
+}
+DEFAULT_AXIS_COLOR = (160, 160, 160)  # genotype not recognized from filename
 
 # Below this many detected ruler ticks, the fitted px/mm scale is noticeably
 # less stable (see README "Calibration confidence") -- flag rather than trust
@@ -121,7 +129,7 @@ def measure_file(
     area_mm2 = region.area_px / (cal.px_per_mm ** 2)
 
     if overlay_path is not None:
-        _save_overlay(img, cal, region, overlay_path)
+        _save_overlay(img, cal, region, info.genotype, long_axis_mm, short_axis_mm, area_mm2, overlay_path)
 
     return MeasurementResult(
         ok=True, error=None,
@@ -132,39 +140,55 @@ def measure_file(
     )
 
 
-def _save_overlay(img: np.ndarray, cal: Calibration, region: HeartRegion, out_path: Path) -> None:
+def _save_overlay(
+    img: np.ndarray,
+    cal: Calibration,
+    region: HeartRegion,
+    genotype: str | None,
+    long_axis_mm: float,
+    short_axis_mm: float,
+    area_mm2: float,
+    out_path: Path,
+) -> None:
+    """Draw the heart outline and axis lines on a copy of the specimen crop
+    that has been rotated so the long axis is horizontal (parallel to the
+    bottom edge), for easy visual comparison across many photos. The ruler
+    is cropped out of this view -- it isn't needed for the drawing, and the
+    displayed numbers (computed from the original, unrotated measurement)
+    are the authoritative ones regardless of the rotation.
+    """
     from PIL import Image, ImageDraw
     from skimage import measure as sk_measure
 
-    pil = Image.fromarray(img).convert("RGB")
+    w = img.shape[1]
+    if cal.ruler_side == "right":
+        specimen_img = img[:, :cal.ruler_edge_px]
+        specimen_mask = region.mask[:, :cal.ruler_edge_px]
+    else:
+        specimen_img = img[:, cal.ruler_edge_px:]
+        specimen_mask = region.mask[:, cal.ruler_edge_px:]
+
+    crop = rotate_to_horizontal(specimen_img, specimen_mask)
+
+    pil = Image.fromarray(crop.image).convert("RGB")
     draw = ImageDraw.Draw(pil)
 
-    for contour in sk_measure.find_contours(region.mask.astype(float), 0.5):
+    for contour in sk_measure.find_contours(crop.mask.astype(float), 0.5):
         draw.line([(x, y) for y, x in contour], fill=(0, 255, 0), width=3)
 
-    y0, x0 = region.centroid
-    orientation = region.orientation_rad
-    half_major = region.major_axis_length_px / 2
-    half_minor = region.minor_axis_length_px / 2
+    color = GENOTYPE_COLORS.get(genotype or "", DEFAULT_AXIS_COLOR)
+    (mx1, my1), (mx2, my2) = crop.axes.major_endpoints
+    draw.line([(mx1, my1), (mx2, my2)], fill=color, width=3)
+    (nx1, ny1), (nx2, ny2) = crop.axes.minor_endpoints
+    draw.line([(nx1, ny1), (nx2, ny2)], fill=color, width=2)
+    # "L"/"W" end-cap labels so the two same-colored lines stay distinguishable.
+    draw.text((mx2 + 4, my2 - 6), "L", fill=color)
+    draw.text((nx2 + 4, ny2 - 6), "W", fill=color)
 
-    x1 = x0 - math.sin(orientation) * half_major
-    y1 = y0 - math.cos(orientation) * half_major
-    x2 = x0 + math.sin(orientation) * half_major
-    y2 = y0 + math.cos(orientation) * half_major
-    draw.line([(x1, y1), (x2, y2)], fill=(255, 0, 0), width=3)
-
-    x3 = x0 + math.cos(orientation) * half_minor
-    y3 = y0 - math.sin(orientation) * half_minor
-    x4 = x0 - math.cos(orientation) * half_minor
-    y4 = y0 + math.sin(orientation) * half_minor
-    draw.line([(x3, y3), (x4, y4)], fill=(0, 128, 255), width=3)
-
-    h = img.shape[0]
-    draw.line([(cal.ruler_edge_px, 0), (cal.ruler_edge_px, h)], fill=(255, 255, 0), width=2)
-
-    long_mm = region.major_axis_length_px / cal.px_per_mm
-    short_mm = region.minor_axis_length_px / cal.px_per_mm
-    label = f"long {long_mm:.2f} mm | short {short_mm:.2f} mm | {cal.px_per_mm:.1f} px/mm | {cal.n_ticks} ticks"
+    label = (
+        f"long {long_axis_mm:.2f} mm | short {short_axis_mm:.2f} mm | area {area_mm2:.2f} mm2 | "
+        f"{cal.px_per_mm:.1f} px/mm | {cal.n_ticks} ticks"
+    )
     if cal.n_ticks < MIN_CONFIDENT_TICKS:
         label += "  [LOW-CONFIDENCE CALIBRATION]"
     draw.text((10, 10), label, fill=(255, 255, 0))

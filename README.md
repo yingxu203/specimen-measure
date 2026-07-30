@@ -2,13 +2,15 @@
 
 Batch morphometry for photographed whole-heart specimens: automatically finds
 the cm/mm ruler in each photo, segments the heart from the background, and
-reports the long-axis (apex-to-base) and short-axis (transverse) length in
-millimeters, calibrated per-image from the ruler rather than an assumed
-camera distance.
+reports the long-axis (apex-to-base) length, short-axis (transverse) length,
+and cross-sectional area in millimeters/mm², calibrated per-image from the
+ruler rather than an assumed camera distance.
 
 Built for a set of mouse heart specimen photos (front/back views on a dark
 background with a printed ruler along one edge), but the calibration and
-segmentation approach generalizes to any similar setup.
+segmentation approach generalizes to any similar setup. Usable either as a
+command-line batch tool or through a point-and-click browser UI (see
+[UI](#ui-for-non-coders)) — no coding required for day-to-day use.
 
 ![example overlay on a synthetic test image](docs/example_overlay.png)
 
@@ -32,11 +34,26 @@ For each image:
    brightness but still stands out clearly from a near-black background in
    at least one color channel. Otsu thresholding + morphological
    cleanup + largest-connected-component selection isolates the heart.
-3. **Measurement** ([`heart_measure/measure.py`](heart_measure/measure.py)) — the segmented blob's
-   major/minor axis lengths (via `skimage.measure.regionprops`, the axes of
-   the ellipse with the same normalized second central moments as the
-   region) are converted from pixels to mm using the per-image scale, and an
-   annotated overlay image is saved for visual QC.
+3. **Measurement** ([`heart_measure/segmentation.py`](heart_measure/segmentation.py)`compute_axes`) —
+   long/short axis length is a true caliper-style measurement: every
+   foreground pixel is projected onto the shape's principal-axis directions,
+   and the min/max of that projection is taken, so the reported length
+   reaches exactly to the segmented shape's real boundary (not an
+   ellipse-of-equivalent-moments approximation, which can over- or
+   under-shoot on notched/asymmetric shapes like a heart with an auricle).
+   Area is simply the segmented pixel count, converted with the same
+   per-image scale.
+4. **Display rotation** ([`heart_measure/rotate.py`](heart_measure/rotate.py)) — for the overlay image
+   only (not the underlying measurement, which is rotation-invariant), the
+   specimen crop is rotated so the long axis is horizontal — parallel to the
+   bottom edge — and tightly cropped, so overlays are easy to flip through
+   and compare regardless of how the heart happened to sit in the original
+   photo.
+5. **Overlay drawing** ([`heart_measure/measure.py`](heart_measure/measure.py)) — the rotated crop gets
+   the heart outline (green), long axis line labeled **L** and short axis
+   line labeled **W** (colored **red `#FF2C2C`** for OX/OF/OM animals,
+   **blue `#0000FF`** for WT/WF/WM animals, based on the genotype parsed from
+   the filename), and a text label with the long/short/area/scale values.
 
 ## Install
 
@@ -44,9 +61,24 @@ For each image:
 pip install -r requirements.txt
 ```
 
-(Python 3.10+. No GPU or compiled dependencies — numpy/scipy/scikit-image/pillow/pandas/tifffile only.)
+(Python 3.10+. No GPU or compiled dependencies — numpy/scipy/scikit-image/pillow/pandas/tifffile/streamlit only.)
 
-## Usage
+## UI (for non-coders)
+
+```bash
+streamlit run app.py
+```
+
+or, on macOS, just double-click [`run_app.command`](run_app.command) in Finder — it installs
+dependencies if needed and opens the app in your browser. No command line
+required.
+
+In the app you can either drag-and-drop photos or point it at a local folder
+path, run the measurement, browse results in a table, flip through the
+rotated/color-coded overlay images, and download the CSVs — everything the
+CLI produces, with no code.
+
+## Usage (command line)
 
 ```bash
 python -m heart_measure.cli --input-dir "/path/to/your/photos" --output-dir ./results
@@ -55,12 +87,15 @@ python -m heart_measure.cli --input-dir "/path/to/your/photos" --output-dir ./re
 This searches `--input-dir` recursively for `*.tif` files and writes to `--output-dir`:
 
 - `measurements.csv` — one row per image (see schema below)
-- `summary_by_animal_and_view.csv` — mean ± std long/short axis grouped by
-  (genotype, treatment, animal ID, view), for animals where duplicate photos
-  of the same view exist
-- `overlays/*.png` — each source image with the detected heart outline
-  (green), long axis (red), short axis (blue), and detected ruler edge
-  (yellow) drawn on it, plus the measured values as text
+- `summary_by_animal_and_view.csv` — mean ± std long/short axis/area grouped
+  by (genotype, treatment, animal ID, **view**) — front and back photos of
+  the same animal are always kept in separate rows, never averaged together,
+  since a front-view photo and a back-view photo of the same heart aren't
+  directly comparable measurements
+- `overlays/*.png` — each specimen crop, rotated so the long axis is
+  horizontal, with the detected heart outline (green) and long/short axis
+  lines (labeled **L**/**W**, colored by genotype — red for OX/OF/OM, blue
+  for WT/WF/WM) drawn on it, plus the measured values as text
 
 Options:
 
@@ -118,13 +153,18 @@ after a run on a new naming convention and extend the patterns in
 - Assumes ruler ticks are 1 mm apart (i.e. the finest gradation on the
   ruler). If your ruler's finest visible gradation is different, the
   reported `px_per_mm` will be scaled incorrectly.
-- The long/short axis measurement is the segmented blob's principal-axis
-  length, not a manually-placed caliper measurement — it will include
-  whatever tissue survived dissection/segmentation (e.g. a torn auricle
-  changes the outline). Always spot-check overlays against your own
-  judgment of what should count as part of the heart.
+- The long/short axis measurement reaches to the edges of whatever tissue
+  survived dissection/segmentation (e.g. a torn auricle changes the
+  outline) — it isn't a judgment call about what "should" count as part of
+  the heart. Always spot-check overlays against your own judgment.
 - Not validated on anything other than the mouse heart photo setup this was
   built for.
+
+## Roadmap
+
+Built-in statistical analysis/comparison across genotype and treatment
+groups (beyond the simple per-animal summary CSV) is planned as a follow-up,
+once the measurement pipeline and UI are stable.
 
 ## Development
 
