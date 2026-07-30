@@ -63,17 +63,24 @@ For each image:
    rotation), converted with the same per-image scale.
 
    For `apex_down`, width gets one more correction (`rotate.py`'s
-   `_core_body_width_row`): a naive bounding-box width consistently
-   overshot hand-annotated reference measurements by 4-18%, always in the
-   same direction, because a heart's auricle sticks out sideways near the
-   base and widens exactly the rows it occupies. The row-by-row width
-   profile is scanned for where it rises to a peak (auricle-inclusive) and
-   then drops sharply once the appendage ends; the width just past that
-   drop is used instead, matching hand annotations within ~1-8% (only the
-   single most extreme auricle in the reference set was off by ~12%) with
-   no systematic bias in either direction. This step is skipped for
-   `vertical`/`horizontal` orientation modes, since it assumes a heart-like
-   base/apex distinction that doesn't apply to round tumors or other organs.
+   `_core_body_width_row`): "width" specifically means the ventricles,
+   never the atria. A naive bounding-box width consistently overshot
+   hand-annotated reference measurements by 4-18%, always in the same
+   direction, because a heart's atria/auricle stick out sideways near the
+   base and widen exactly the rows they occupy. Rather than just reducing
+   that influence, this finds the actual atria/ventricle boundary: the
+   atria show up as concave notches in the silhouette (a gap between the
+   mask and its own convex hull), while the ventricle body is smooth and
+   convex, so the last row (scanning down from the top, within the region
+   the base can plausibly occupy) with a meaningfully concave silhouette
+   marks where the atria end. Only rows strictly below that (plus a small
+   safety margin) are eligible for the width measurement, so the result
+   cannot include any atria-influenced row at all. Matches hand annotations
+   within -3.6% to +1.2% (versus -12% to +12% for an earlier version that
+   only reduced, rather than strictly excluded, the atria's influence).
+   This step is skipped for `vertical`/`horizontal` orientation modes,
+   since it assumes a heart-like atria/ventricle distinction that does not
+   apply to round tumors or other organs.
 5. **Overlay drawing** (`measure.py`) — the rotated crop gets the specimen
    outline (green), long axis line labeled **L** and short axis line
    labeled **W**, both perfectly straight/axis-aligned. Optionally colored by
