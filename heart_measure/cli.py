@@ -1,7 +1,7 @@
-"""Command-line entry point: batch-measure every heart photo in a folder.
+"""Command-line entry point: batch-measure every specimen photo in a folder.
 
 Usage:
-    python -m heart_measure.cli --input-dir "/path/to/Osmotic Pump" --output-dir ./results
+    python -m heart_measure.cli --input-dir "/path/to/photos" --output-dir ./results
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from .measure import MIN_CONFIDENT_TICKS, measure_file
+from .rotate import OrientMode
 
 DEFAULT_PATTERN = "*.tif"
 
@@ -46,7 +47,15 @@ def summarize_by_animal_and_view(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def run(input_dir: Path, output_dir: Path, pattern: str, ruler_side: str, overlays: bool) -> pd.DataFrame:
+def run(
+    input_dir: Path,
+    output_dir: Path,
+    pattern: str,
+    ruler_side: str,
+    overlays: bool,
+    orient_mode: OrientMode = "apex_down",
+    use_genotype_colors: bool = True,
+) -> pd.DataFrame:
     files = find_images(input_dir, pattern)
     if not files:
         raise SystemExit(f"No files matching {pattern!r} found under {input_dir}")
@@ -57,7 +66,10 @@ def run(input_dir: Path, output_dir: Path, pattern: str, ruler_side: str, overla
     rows = []
     for path in files:
         overlay_path = overlay_dir / f"{path.stem}_overlay.png" if overlays else None
-        result = measure_file(path, ruler_side=ruler_side, overlay_path=overlay_path)
+        result = measure_file(
+            path, ruler_side=ruler_side, overlay_path=overlay_path,
+            orient_mode=orient_mode, use_genotype_colors=use_genotype_colors,
+        )
         rows.append(result.to_row())
         status = "ok" if result.ok else f"FAILED: {result.error}"
         print(f"{path.name}: {status}")
@@ -102,12 +114,23 @@ def main(argv: list[str] | None = None) -> int:
                          help="Which edge of the frame the ruler is on (default: auto-detect).")
     parser.add_argument("--no-overlays", action="store_true",
                          help="Skip writing annotated QC overlay images (faster, smaller output).")
+    parser.add_argument("--orientation", default="apex_down",
+                         choices=["apex_down", "vertical", "horizontal"],
+                         help="Overlay orientation convention (default: apex_down, a heart-specific "
+                              "convention -- atria/base up, apex down). Use 'vertical' or 'horizontal' "
+                              "for other organs/tumors with no consistent 'this end goes on top'.")
+    parser.add_argument("--no-genotype-colors", action="store_true",
+                         help="Don't color axis lines by the OX/WT heart-study genotype convention; "
+                              "use a single neutral color for all images.")
     args = parser.parse_args(argv)
 
     if not args.input_dir.is_dir():
         parser.error(f"--input-dir {args.input_dir} is not a directory")
 
-    run(args.input_dir, args.output_dir, args.pattern, args.ruler_side, overlays=not args.no_overlays)
+    run(
+        args.input_dir, args.output_dir, args.pattern, args.ruler_side, overlays=not args.no_overlays,
+        orient_mode=args.orientation, use_genotype_colors=not args.no_genotype_colors,
+    )
     return 0
 
 

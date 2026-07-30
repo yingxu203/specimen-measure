@@ -13,16 +13,19 @@ import tifffile
 
 from .calibration import Calibration, CalibrationError, calibrate
 from .metadata import SpecimenInfo, parse_filename
-from .rotate import rotate_to_horizontal
+from .rotate import OrientMode, RotatedCrop, rotate_for_display
 from .segmentation import HeartRegion, SegmentationError, segment_heart
 
-# Axis-line color by genotype, per lab convention: OX/OF/OM animals are OX
-# genotype (red), WT/WF/WM animals are WT genotype (blue).
+# Axis-line color by genotype -- a convention from the heart study this tool
+# was originally built for (OX/OF/OM animals are OX genotype, WT/WF/WM are
+# WT genotype). Purely cosmetic and optional: pass use_genotype_colors=False
+# (e.g. for tumor/other-organ datasets with no such convention) to always use
+# DEFAULT_AXIS_COLOR instead.
 GENOTYPE_COLORS: dict[str, tuple[int, int, int]] = {
     "OX": (255, 44, 44),   # #FF2C2C
     "WT": (0, 0, 255),     # #0000FF
 }
-DEFAULT_AXIS_COLOR = (160, 160, 160)  # genotype not recognized from filename
+DEFAULT_AXIS_COLOR = (255, 215, 0)  # gold -- used when genotype coloring is off or unrecognized
 
 # Below this many detected ruler ticks, the fitted px/mm scale is noticeably
 # less stable (see README "Calibration confidence") -- flag rather than trust
@@ -75,10 +78,38 @@ def load_image(path: Path) -> np.ndarray:
     return arr
 
 
+def get_rotated_crop(
+    path: Path,
+    ruler_side: str = "auto",
+    orient_mode: OrientMode = "apex_down",
+    manual_flip: bool = False,
+) -> tuple[RotatedCrop, Calibration]:
+    """Run calibration + segmentation + rotation for one photo and hand back
+    the rotated crop and calibration directly, so a caller (e.g. a UI) can
+    draw its own annotations on the same frame used for the auto overlay --
+    e.g. for manual click-to-measure -- without duplicating this pipeline.
+    """
+    img = load_image(path)
+    gray = img[:, :, :3].mean(axis=2)
+    cal = calibrate(gray, ruler_side=ruler_side)
+    region = segment_heart(img, cal.ruler_side, cal.ruler_edge_px)
+    if cal.ruler_side == "right":
+        specimen_img = img[:, :cal.ruler_edge_px]
+        specimen_mask = region.mask[:, :cal.ruler_edge_px]
+    else:
+        specimen_img = img[:, cal.ruler_edge_px:]
+        specimen_mask = region.mask[:, cal.ruler_edge_px:]
+    crop = rotate_for_display(specimen_img, specimen_mask, orient_mode=orient_mode, manual_flip=manual_flip)
+    return crop, cal
+
+
 def measure_file(
     path: Path,
     ruler_side: str = "auto",
     overlay_path: Path | None = None,
+    orient_mode: OrientMode = "apex_down",
+    use_genotype_colors: bool = True,
+    manual_flip: bool = False,
 ) -> MeasurementResult:
     info = parse_filename(path.name)
     base_fields = dict(
@@ -131,7 +162,10 @@ def measure_file(
     area_mm2 = region.area_px / (cal.px_per_mm ** 2)
 
     if overlay_path is not None:
-        _save_overlay(img, cal, region, info.genotype, long_axis_mm, short_axis_mm, area_mm2, overlay_path)
+        _save_overlay(
+            img, cal, region, info.genotype, long_axis_mm, short_axis_mm, area_mm2, overlay_path,
+            orient_mode=orient_mode, use_genotype_colors=use_genotype_colors, manual_flip=manual_flip,
+        )
 
     return MeasurementResult(
         ok=True, error=None,
@@ -151,13 +185,16 @@ def _save_overlay(
     short_axis_mm: float,
     area_mm2: float,
     out_path: Path,
+    orient_mode: OrientMode = "apex_down",
+    use_genotype_colors: bool = True,
+    manual_flip: bool = False,
 ) -> None:
-    """Draw the heart outline and axis lines on a copy of the specimen crop
-    that has been rotated so the long axis is horizontal (parallel to the
-    bottom edge), for easy visual comparison across many photos. The ruler
-    is cropped out of this view -- it isn't needed for the drawing, and the
-    displayed numbers (computed from the original, unrotated measurement)
-    are the authoritative ones regardless of the rotation.
+    """Draw the specimen outline and axis lines on a copy of the specimen
+    crop that has been rotated to a standard orientation (see `orient_mode`),
+    for easy visual comparison across many photos. The ruler is cropped out
+    of this view -- it isn't needed for the drawing, and the displayed
+    numbers (computed from the original, unrotated measurement) are the
+    authoritative ones regardless of the rotation.
     """
     from PIL import Image, ImageDraw
     from skimage import measure as sk_measure
@@ -170,7 +207,7 @@ def _save_overlay(
         specimen_img = img[:, cal.ruler_edge_px:]
         specimen_mask = region.mask[:, cal.ruler_edge_px:]
 
-    crop = rotate_to_horizontal(specimen_img, specimen_mask)
+    crop = rotate_for_display(specimen_img, specimen_mask, orient_mode=orient_mode, manual_flip=manual_flip)
 
     pil = Image.fromarray(crop.image).convert("RGB")
     draw = ImageDraw.Draw(pil)
@@ -178,7 +215,7 @@ def _save_overlay(
     for contour in sk_measure.find_contours(crop.mask.astype(float), 0.5):
         draw.line([(x, y) for y, x in contour], fill=(0, 255, 0), width=3)
 
-    color = GENOTYPE_COLORS.get(genotype or "", DEFAULT_AXIS_COLOR)
+    color = GENOTYPE_COLORS.get(genotype or "", DEFAULT_AXIS_COLOR) if use_genotype_colors else DEFAULT_AXIS_COLOR
     (mx1, my1), (mx2, my2) = crop.axes.major_endpoints
     draw.line([(mx1, my1), (mx2, my2)], fill=color, width=3)
     (nx1, ny1), (nx2, ny2) = crop.axes.minor_endpoints

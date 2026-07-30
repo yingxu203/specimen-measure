@@ -55,11 +55,20 @@ def compute_axes(mask: np.ndarray) -> AxesInfo:
     *ellipse with equivalent second moments* -- for a shape with notches or
     asymmetric protrusions (like a heart with an auricle sticking out), that
     can be noticeably shorter or longer than the shape's actual reach along
-    that direction. Instead, this projects every foreground pixel onto the
-    principal-axis directions (still taken from image moments, since that's a
-    stable estimate of orientation) and takes the min/max of the projection --
-    a caliper-style measurement that is guaranteed to touch the true boundary
-    at both ends.
+    that direction.
+
+    This instead projects every foreground pixel onto the principal-axis
+    directions (still taken from image moments, since that's a stable
+    estimate of orientation) purely to *identify* which two pixels are the
+    extremes -- the endpoints actually returned/drawn are those two real
+    pixels' own (x, y) coordinates, not their idealized position on the
+    central axis line through the centroid. That distinction matters for
+    asymmetric shapes: the pixel with the most extreme projection is often
+    offset to one side of the centroid line (e.g. an auricle tip), so a line
+    drawn between the *projected* positions would visibly fall short of, or
+    poke past, the true boundary. Drawing between the real pixels guarantees
+    the line touches the actual boundary at both ends, and the reported
+    length (the Euclidean distance between them) matches what's drawn.
     """
     labeled = measure.label(mask)
     props = measure.regionprops(labeled)
@@ -83,19 +92,25 @@ def compute_axes(mask: np.ndarray) -> AxesInfo:
     t_major = rel_x * u_major[0] + rel_y * u_major[1]
     t_minor = rel_x * u_minor[0] + rel_y * u_minor[1]
 
-    maj_lo, maj_hi = float(t_major.min()), float(t_major.max())
-    min_lo, min_hi = float(t_minor.min()), float(t_minor.max())
+    i_maj_lo, i_maj_hi = int(np.argmin(t_major)), int(np.argmax(t_major))
+    i_min_lo, i_min_hi = int(np.argmin(t_minor)), int(np.argmax(t_minor))
 
-    def endpoint(t: float, u: tuple[float, float]) -> Point:
-        return (x0 + t * u[0], y0 + t * u[1])
+    def pixel(i: int) -> Point:
+        return (float(xs[i]), float(ys[i]))
+
+    def dist(p: Point, q: Point) -> float:
+        return math.hypot(p[0] - q[0], p[1] - q[1])
+
+    major_pts = (pixel(i_maj_lo), pixel(i_maj_hi))
+    minor_pts = (pixel(i_min_lo), pixel(i_min_hi))
 
     return AxesInfo(
         centroid_xy=(x0, y0),
         orientation_rad=orientation,
-        major_endpoints=(endpoint(maj_lo, u_major), endpoint(maj_hi, u_major)),
-        minor_endpoints=(endpoint(min_lo, u_minor), endpoint(min_hi, u_minor)),
-        major_axis_length_px=maj_hi - maj_lo,
-        minor_axis_length_px=min_hi - min_lo,
+        major_endpoints=major_pts,
+        minor_endpoints=minor_pts,
+        major_axis_length_px=dist(*major_pts),
+        minor_axis_length_px=dist(*minor_pts),
     )
 
 
