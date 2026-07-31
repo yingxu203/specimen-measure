@@ -63,7 +63,7 @@ class RoundedButton(tk.Canvas):
                  disabled_fill="#F2F2F2", disabled_border="#CFCFCF",
                  text_color=ACCENT, font=("Arial", 13, "bold")):
         super().__init__(parent, width=width, height=height, bg=BG,
-                          highlightthickness=0, bd=0, cursor="hand2")
+                          highlightthickness=0, bd=0)
         self._command = command
         self._fill = fill
         self._hover_fill = hover_fill
@@ -98,7 +98,6 @@ class RoundedButton(tk.Canvas):
         fill = self._fill if enabled else self._disabled_fill
         border = self._border if enabled else self._disabled_border
         self.itemconfig(self._shape, fill=fill, outline=border)
-        self.configure(cursor="hand2" if enabled else "arrow")
 
     def set_text(self, text: str):
         self.itemconfig(self._text_item, text=text)
@@ -113,7 +112,6 @@ def _short_name(path: str, max_len: int = 28) -> str:
 
 window = tk.Tk()
 window.title(APP_TITLE)
-window.geometry("900x340")
 window.configure(bg=BG)
 
 # 'clam' is a fully Tk-drawn (non-native) ttk theme, which is what lets us
@@ -170,9 +168,11 @@ def selectInputClicked():
 
 
 DIRECTORY_BUTTON_WIDTH = 220
+LABEL_WIDTH = 34  # wide enough for the longest of the three row labels below
 
 row1 = _row(form)
-tk.Label(row1, text="Input Directory:", justify="right", width=16, bg=BG).pack(side="left")
+tk.Label(row1, text="Where is your sample images?", justify="right", width=LABEL_WIDTH,
+         bg=BG).pack(side="left")
 inputSelectButton = RoundedButton(row1, text="Select Folder...", command=selectInputClicked,
                                    width=DIRECTORY_BUTTON_WIDTH, height=32)
 inputSelectButton.pack(side="left", padx=6)
@@ -190,7 +190,8 @@ def selectOutputClicked():
 
 
 row2 = _row(form)
-tk.Label(row2, text="Output Directory:", justify="right", width=16, bg=BG).pack(side="left")
+tk.Label(row2, text="Where you wish to save results to?", justify="right", width=LABEL_WIDTH,
+         bg=BG).pack(side="left")
 outputSelectButton = RoundedButton(row2, text="Select Folder... (optional)", command=selectOutputClicked,
                                     width=DIRECTORY_BUTTON_WIDTH, height=32)
 outputSelectButton.pack(side="left", padx=6)
@@ -203,15 +204,15 @@ SPECIMEN_TYPES = {
 specimenTypeLabel = tk.StringVar(value="")  # empty until the user picks one
 
 row3 = _row(form)
-tk.Label(row3, text="Specimen type:", justify="right", width=16, bg=BG).pack(side="left")
-specimenTypeFrame = tk.Frame(row3, width=DIRECTORY_BUTTON_WIDTH, height=32, bg=BG)
-specimenTypeFrame.pack_propagate(False)
-specimenTypeFrame.pack(side="left", padx=6)
+tk.Label(row3, text="Sample type:", justify="right", width=LABEL_WIDTH, bg=BG).pack(side="left")
+# Wide enough to show the full option text in the closed box too, not just
+# the popup list -- otherwise a chosen value like "Heart (rotate, atria
+# up/apex down, ventricle-only width)" gets cut off once selected.
 specimenTypeMenu = ttk.Combobox(
-    specimenTypeFrame, textvariable=specimenTypeLabel, values=list(SPECIMEN_TYPES.keys()),
-    state="readonly",
+    row3, textvariable=specimenTypeLabel, values=list(SPECIMEN_TYPES.keys()),
+    state="readonly", width=max(len(v) for v in SPECIMEN_TYPES) + 1,
 )
-specimenTypeMenu.pack(fill="both", expand=True)
+specimenTypeMenu.pack(side="left", padx=6)
 _widen_dropdown_popup(specimenTypeMenu)
 
 # ------------------------ Check boxes ------------------------------
@@ -219,11 +220,11 @@ row4 = tk.Frame(form, bg=BG)
 row4.pack(pady=(10, 0))
 
 saveOverlays = tk.BooleanVar(value=True)
-tk.Checkbutton(row4, text="Save overlay images + combined PDF", var=saveOverlays, bg=BG,
+tk.Checkbutton(row4, text="Save QC check images", var=saveOverlays, bg=BG,
                activebackground=BG).pack(side="left", padx=10)
 
 useGenotypeColors = tk.BooleanVar(value=True)
-tk.Checkbutton(row4, text="Color axis lines by genotype", var=useGenotypeColors,
+tk.Checkbutton(row4, text="I want to separate different genotype groups", var=useGenotypeColors,
                bg=BG, activebackground=BG).pack(side="left", padx=10)
 
 # Genotype group names -- default to this study's OX/WT convention, but any
@@ -341,11 +342,16 @@ def manualAnnotateClicked():
 
 
 manualFrame = tk.Frame(main, bg=BG)
-manualFrame.pack(pady=(8, 0))
+manualFrame.pack(pady=(8, 16))
 RoundedButton(
-    manualFrame, text="Manual Annotation (for images not captured well)...",
-    command=manualAnnotateClicked, width=420, height=32, font=("Arial", 12),
+    manualFrame, text="Manual Annotation...",
+    command=manualAnnotateClicked, width=220, height=32, font=("Arial", 12),
 ).pack()
 
-# Main
+# Size the window to exactly fit its content on first launch, rather than a
+# hardcoded guess that goes stale (and clips widgets) whenever a row is
+# added later. Resizable by hand afterward as normal.
+window.update_idletasks()
+window.geometry(f"{window.winfo_reqwidth()}x{window.winfo_reqheight()}")
+
 window.mainloop()
