@@ -3,14 +3,13 @@
 specimen_measure_gui.py
 
 Desktop pop-up window for the batch measurement tool, for anyone who would
-rather not use the browser UI (app.py) or the command line. Matches the
-look and workflow of the existing Echocardiography Segmenter tool: pick a
-folder, check some boxes, hit Run, get a "done" popup.
+rather not use the browser UI (app.py) or the command line.
 
 Launch with:
     python3 specimen_measure_gui.py
 """
 
+import subprocess
 import sys
 import threading
 import tkinter as tk
@@ -23,18 +22,34 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from specimen_measure.cli import DEFAULT_PATTERN, run  # noqa: E402
 
+APP_TITLE = "Ying's Measurement Tool for Specimen"
+
+# A light, Finder-window-like background instead of Tk's default gray, with
+# a blue accent for the title/Run button.
+BG = "#FFFFFF"
+ACCENT = "#0080FE"
+ACCENT_BUTTON = "#73C2FB"
+
 window = tk.Tk()
-window.title("specimen-measure")
-window.geometry("900x260")
+window.title(APP_TITLE)
+window.geometry("900x340")
+window.configure(bg=BG)
 
-appTitle = tk.Label(window, text="specimen-measure", font=("calibri", 20, "bold"), fg="forest green")
-appTitle.grid(column=3, row=0)
+main = tk.Frame(window, bg=BG)
+main.pack(fill="both", expand=True, padx=20, pady=16)
 
-# ----------------------- Formatting -----------------------
-offsetBlank = tk.Label(text="", width=4, height=2)
-offsetBlank.grid(column=0, row=0)
-for r in (2, 4, 6, 8, 10, 12):
-    tk.Label(text="", width=1, height=1).grid(column=0, row=r)
+appTitle = tk.Label(main, text=APP_TITLE, font=("calibri", 20, "bold"), fg=ACCENT, bg=BG)
+appTitle.pack(pady=(0, 16))  # centered by default (no fill/side given)
+
+form = tk.Frame(main, bg=BG)
+form.pack()
+
+
+def _row(parent):
+    r = tk.Frame(parent, bg=BG)
+    r.pack(fill="x", pady=5)
+    return r
+
 
 # --------------------- Input directory ---------------------
 inputDir = tk.StringVar(value="None Selected")
@@ -47,10 +62,11 @@ def selectInputClicked():
         print(chosen + " selected as input")
 
 
-tk.Label(window, text="Input Directory:", justify="right", width=20).grid(column=1, row=1)
-inputDirDisp = tk.Label(window, textvariable=inputDir, font=("arial", 8), justify="center", bg="white", width=90)
-inputDirDisp.grid(column=2, row=1, columnspan=3)
-tk.Button(window, text="Select", command=selectInputClicked, justify="right", width=10).grid(column=5, row=1)
+row1 = _row(form)
+tk.Label(row1, text="Input Directory:", justify="right", width=16, bg=BG).pack(side="left")
+tk.Label(row1, textvariable=inputDir, font=("arial", 8), justify="center", bg="white", width=70,
+         relief="sunken", bd=1).pack(side="left", padx=6)
+tk.Button(row1, text="Select", command=selectInputClicked, width=10).pack(side="left")
 
 # --------------------- Output directory ---------------------
 outputDir = tk.StringVar(value="None Selected (defaults to <input>/results)")
@@ -63,10 +79,11 @@ def selectOutputClicked():
         print(chosen + " selected as output")
 
 
-tk.Label(window, text="Output Directory:", justify="right", width=20).grid(column=1, row=3)
-outputDirDisp = tk.Label(window, textvariable=outputDir, font=("arial", 8), justify="center", bg="white", width=90)
-outputDirDisp.grid(column=2, row=3, columnspan=3)
-tk.Button(window, text="Select", command=selectOutputClicked, justify="right", width=10).grid(column=5, row=3)
+row2 = _row(form)
+tk.Label(row2, text="Output Directory:", justify="right", width=16, bg=BG).pack(side="left")
+tk.Label(row2, textvariable=outputDir, font=("arial", 8), justify="center", bg="white", width=70,
+         relief="sunken", bd=1).pack(side="left", padx=6)
+tk.Button(row2, text="Select", command=selectOutputClicked, width=10).pack(side="left")
 
 # --------------------- Specimen type ---------------------
 SPECIMEN_TYPES = {
@@ -74,25 +91,29 @@ SPECIMEN_TYPES = {
     "Other tissue/tumor (no rotation, simple center-to-edge)": "none",
 }
 specimenTypeLabel = tk.StringVar(value=list(SPECIMEN_TYPES.keys())[0])
-tk.Label(window, text="Specimen type:", justify="right", width=20).grid(column=1, row=5)
+
+row3 = _row(form)
+tk.Label(row3, text="Specimen type:", justify="right", width=16, bg=BG).pack(side="left")
 specimenTypeMenu = ttk.Combobox(
-    window, textvariable=specimenTypeLabel, values=list(SPECIMEN_TYPES.keys()),
-    state="readonly", width=55,
+    row3, textvariable=specimenTypeLabel, values=list(SPECIMEN_TYPES.keys()),
+    state="readonly", width=58,
 )
-specimenTypeMenu.grid(column=2, row=5, columnspan=3, sticky="w")
+specimenTypeMenu.pack(side="left", padx=6)
 
 # ------------------------ Check boxes ------------------------------
+row4 = tk.Frame(form, bg=BG)
+row4.pack(pady=(10, 0))
+
 saveOverlays = tk.BooleanVar(value=True)
-tk.Checkbutton(window, text="Save overlay images + combined PDF", var=saveOverlays).grid(column=2, row=7)
+tk.Checkbutton(row4, text="Save overlay images + combined PDF", var=saveOverlays, bg=BG,
+               activebackground=BG).pack(side="left", padx=10)
 
 useGenotypeColors = tk.BooleanVar(value=True)
-tk.Checkbutton(window, text="Color axis lines by genotype (OX=red / WT=blue)", var=useGenotypeColors).grid(
-    column=3, row=7,
-)
+tk.Checkbutton(row4, text="Color axis lines by genotype (OX=red / WT=blue)", var=useGenotypeColors,
+               bg=BG, activebackground=BG).pack(side="left", padx=10)
 
 statusText = tk.StringVar(value="")
-statusLabel = tk.Label(window, textvariable=statusText, font=("arial", 10), fg="gray30")
-statusLabel.grid(column=3, row=9)
+tk.Label(main, textvariable=statusText, font=("arial", 10), fg="gray30", bg=BG).pack(pady=(10, 0))
 
 
 # ----------------------- Run button ----------------------------
@@ -139,7 +160,6 @@ def _finish(summary: str | None = None, error: str | None = None, output_path: P
         return
     msg.showinfo(message=f"Analysis Complete!\n\n{summary}")
     if output_path is not None:
-        import subprocess
         subprocess.run(["open", str(output_path)], check=False)
 
 
@@ -153,8 +173,42 @@ def runButtonClicked():
     threading.Thread(target=_run_in_background, daemon=True).start()
 
 
-runButton = tk.Button(window, text="Run", font=("Arial", 18), command=runButtonClicked)
-runButton.grid(column=3, row=8)
+runFrame = tk.Frame(main, bg=BG)
+runFrame.pack(pady=(14, 0))  # centered by default
+runButton = tk.Button(runFrame, text="Run", font=("Arial", 16, "bold"), width=12,
+                       bg=ACCENT_BUTTON, activebackground=ACCENT, fg="black",
+                       command=runButtonClicked)
+runButton.pack()
+
+
+# ----------------------- Manual annotation ----------------------------
+def manualAnnotateClicked():
+    """Opens the click-to-annotate tool (annotate_specimen.py) for images
+    the automatic measurement did not capture well. Runs as a separate
+    process (it has its own matplotlib window/event loop) so this window
+    stays open and usable.
+    """
+    default_dir = (
+        str(Path(outputDir.get()) / "overlays")
+        if outputDir.get() != "None Selected (defaults to <input>/results)"
+        else (inputDir.get() if inputDir.get() != "None Selected" else None)
+    )
+    chosen = filedialog.askdirectory(
+        title="Choose the folder of images to manually annotate",
+        initialdir=default_dir,
+    )
+    if not chosen:
+        return
+    script = Path(__file__).parent / "annotate_specimen.py"
+    subprocess.Popen([sys.executable, str(script), chosen])
+
+
+manualFrame = tk.Frame(main, bg=BG)
+manualFrame.pack(pady=(8, 0))
+tk.Button(
+    manualFrame, text="Manual Annotation (for images not captured well)...",
+    command=manualAnnotateClicked,
+).pack()
 
 # Main
 window.mainloop()
