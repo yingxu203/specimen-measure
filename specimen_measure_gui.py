@@ -25,9 +25,99 @@ from specimen_measure.cli import DEFAULT_PATTERN, run  # noqa: E402
 APP_TITLE = "Ying's Measurement Tool for Specimen"
 
 # A light, Finder-window-like background instead of Tk's default gray, with
-# a blue accent for the title text.
+# blue accents. Drawn by hand below (rather than relying on ttk's native
+# macOS button/entry styling) because the bundled Tk build here (Anaconda's,
+# not Apple's/python.org's) reports itself as the "aqua" platform but does
+# not actually implement the rounded-corner or accent-color native widget
+# theming -- so ttk widgets render as plain flat rectangles regardless of
+# style options. Hand-drawn Canvas shapes render identically on any Tk build.
 BG = "#FFFFFF"
 ACCENT = "#0080FE"
+ACCENT_LIGHT = "#89CFEF"
+FIELD_BORDER = "#B9DFF5"
+
+
+def _rounded_rect_points(x1, y1, x2, y2, r):
+    return [
+        x1 + r, y1,
+        x2 - r, y1,
+        x2, y1,
+        x2, y1 + r,
+        x2, y2 - r,
+        x2, y2,
+        x2 - r, y2,
+        x1 + r, y2,
+        x1, y2,
+        x1, y2 - r,
+        x1, y1 + r,
+        x1, y1,
+    ]
+
+
+class RoundedButton(tk.Canvas):
+    """A click-able rounded-rectangle button that always renders with real
+    fill colors and soft corners, independent of the platform's native
+    Tk button theming.
+    """
+
+    def __init__(self, parent, text, command, width=110, height=34, radius=10,
+                 fill=ACCENT, hover=None, disabled_fill="#CFCFCF",
+                 fg="white", font=("Arial", 13, "bold")):
+        super().__init__(parent, width=width, height=height, bg=BG,
+                          highlightthickness=0, bd=0, cursor="hand2")
+        self._command = command
+        self._fill = fill
+        self._hover = hover or fill
+        self._disabled_fill = disabled_fill
+        self._enabled = True
+        self._shape = self.create_polygon(
+            _rounded_rect_points(1, 1, width - 1, height - 1, radius),
+            smooth=True, fill=fill, outline=fill,
+        )
+        self.create_text(width / 2, height / 2, text=text, fill=fg, font=font)
+        self.bind("<Button-1>", self._on_click)
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+
+    def _on_click(self, _event):
+        if self._enabled and self._command:
+            self._command()
+
+    def _on_enter(self, _event):
+        if self._enabled:
+            self.itemconfig(self._shape, fill=self._hover, outline=self._hover)
+
+    def _on_leave(self, _event):
+        if self._enabled:
+            self.itemconfig(self._shape, fill=self._fill, outline=self._fill)
+
+    def set_enabled(self, enabled: bool):
+        self._enabled = enabled
+        fill = self._fill if enabled else self._disabled_fill
+        self.itemconfig(self._shape, fill=fill, outline=fill)
+        self.configure(cursor="hand2" if enabled else "arrow")
+
+
+class RoundedField(tk.Canvas):
+    """A read-only, rounded-rectangle text display bound to a StringVar --
+    used for the input/output directory paths."""
+
+    def __init__(self, parent, textvariable, width=560, height=32, radius=9,
+                 fill="white", outline=FIELD_BORDER, font=("Arial", 11)):
+        super().__init__(parent, width=width, height=height, bg=BG,
+                          highlightthickness=0, bd=0)
+        self.create_polygon(
+            _rounded_rect_points(1, 1, width - 1, height - 1, radius),
+            smooth=True, fill=fill, outline=outline,
+        )
+        self._var = textvariable
+        self._text_id = self.create_text(width / 2, height / 2, text=textvariable.get(),
+                                          font=font, fill="black")
+        self._var.trace_add("write", self._on_change)
+
+    def _on_change(self, *_args):
+        self.itemconfig(self._text_id, text=self._var.get())
+
 
 window = tk.Tk()
 window.title(APP_TITLE)
@@ -63,9 +153,9 @@ def selectInputClicked():
 
 row1 = _row(form)
 tk.Label(row1, text="Input Directory:", justify="right", width=16, bg=BG).pack(side="left")
-ttk.Entry(row1, textvariable=inputDir, justify="center", width=68, state="readonly").pack(
-    side="left", padx=6)
-ttk.Button(row1, text="Select", command=selectInputClicked, width=10).pack(side="left")
+RoundedField(row1, textvariable=inputDir).pack(side="left", padx=6)
+RoundedButton(row1, text="Select", command=selectInputClicked, width=90, height=32,
+              fill=ACCENT_LIGHT, hover=ACCENT, fg="black").pack(side="left")
 
 # --------------------- Output directory ---------------------
 outputDir = tk.StringVar(value="None Selected (defaults to <input>/results)")
@@ -80,9 +170,9 @@ def selectOutputClicked():
 
 row2 = _row(form)
 tk.Label(row2, text="Output Directory:", justify="right", width=16, bg=BG).pack(side="left")
-ttk.Entry(row2, textvariable=outputDir, justify="center", width=68, state="readonly").pack(
-    side="left", padx=6)
-ttk.Button(row2, text="Select", command=selectOutputClicked, width=10).pack(side="left")
+RoundedField(row2, textvariable=outputDir).pack(side="left", padx=6)
+RoundedButton(row2, text="Select", command=selectOutputClicked, width=90, height=32,
+              fill=ACCENT_LIGHT, hover=ACCENT, fg="black").pack(side="left")
 
 # --------------------- Specimen type ---------------------
 SPECIMEN_TYPES = {
@@ -152,7 +242,7 @@ def _run_in_background():
 
 
 def _finish(summary: str | None = None, error: str | None = None, output_path: Path | None = None):
-    runButton.configure(state="normal")
+    runButton.set_enabled(True)
     statusText.set("")
     if error:
         msg.showinfo(message=f"There was an issue with this run:\n{error}")
@@ -167,23 +257,16 @@ def runButtonClicked():
         msg.showinfo(message="Please select an input directory first.")
         return
     print("Running analysis...")
-    runButton.configure(state="disabled")
+    runButton.set_enabled(False)
     statusText.set("Running... this window will pop up again when done.")
     threading.Thread(target=_run_in_background, daemon=True).start()
 
 
 runFrame = tk.Frame(main, bg=BG)
 runFrame.pack(pady=(14, 0))  # centered by default
-# "Accent.TButton" is a built-in native style on macOS (Tk 8.6.10+) that
-# renders as a real rounded, filled-blue system button -- plain tk.Button
-# ignores custom bg colors under macOS's native (Aqua) button rendering, so
-# a manually-colored button would just stay gray.
-try:
-    runButton = ttk.Button(runFrame, text="Run", width=12, command=runButtonClicked,
-                            style="Accent.TButton")
-except tk.TclError:
-    runButton = ttk.Button(runFrame, text="Run", width=12, command=runButtonClicked)
-runButton.pack(ipady=4)
+runButton = RoundedButton(runFrame, text="Run", command=runButtonClicked, width=140, height=42,
+                           radius=12, fill=ACCENT, hover="#0066CC", font=("Arial", 16, "bold"))
+runButton.pack()
 
 
 # ----------------------- Manual annotation ----------------------------
@@ -210,9 +293,10 @@ def manualAnnotateClicked():
 
 manualFrame = tk.Frame(main, bg=BG)
 manualFrame.pack(pady=(8, 0))
-ttk.Button(
+RoundedButton(
     manualFrame, text="Manual Annotation (for images not captured well)...",
-    command=manualAnnotateClicked,
+    command=manualAnnotateClicked, width=420, height=32, fill=ACCENT_LIGHT,
+    hover=ACCENT, fg="black", font=("Arial", 12),
 ).pack()
 
 # Main
