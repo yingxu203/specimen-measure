@@ -123,7 +123,17 @@ style.theme_use("clam")
 style.configure("TCombobox", fieldbackground="white", background="white",
                  foreground="black", bordercolor=ACCENT, arrowcolor=ACCENT)
 style.map("TCombobox", fieldbackground=[("readonly", "white")],
-          background=[("readonly", "white")])
+          background=[("readonly", "white")],
+          selectbackground=[("readonly", "white")],
+          selectforeground=[("readonly", "black")])
+
+
+def _clear_combobox_selection(event):
+    """After picking an option, ttk shows the new text as if
+    text-selected (a dark highlight bar) until something else is
+    clicked -- clear that highlight immediately instead.
+    """
+    event.widget.selection_clear()
 
 
 def _widen_dropdown_popup(combo: ttk.Combobox):
@@ -211,6 +221,7 @@ specimenTypeMenu = ttk.Combobox(
 )
 specimenTypeMenu.pack(side="left", padx=6)
 _widen_dropdown_popup(specimenTypeMenu)
+specimenTypeMenu.bind("<<ComboboxSelected>>", _clear_combobox_selection)
 
 # ------------------------ Check boxes ------------------------------
 row4 = tk.Frame(form, bg=BG)
