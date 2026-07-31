@@ -198,16 +198,13 @@ outputSelectButton.pack(side="left", padx=6)
 
 # --------------------- Specimen type ---------------------
 SPECIMEN_TYPES = {
-    "Heart (rotate, atria up/apex down, ventricle-only width)": "apex_down",
-    "Other tissue/tumor (no rotation, simple center-to-edge)": "none",
+    "Heart": "apex_down",
+    "Other Tissue/Tumor": "none",
 }
 specimenTypeLabel = tk.StringVar(value="")  # empty until the user picks one
 
 row3 = _row(form)
 tk.Label(row3, text="Sample type:", justify="right", width=LABEL_WIDTH, bg=BG).pack(side="left")
-# Wide enough to show the full option text in the closed box too, not just
-# the popup list -- otherwise a chosen value like "Heart (rotate, atria
-# up/apex down, ventricle-only width)" gets cut off once selected.
 specimenTypeMenu = ttk.Combobox(
     row3, textvariable=specimenTypeLabel, values=list(SPECIMEN_TYPES.keys()),
     state="readonly", width=max(len(v) for v in SPECIMEN_TYPES) + 1,
