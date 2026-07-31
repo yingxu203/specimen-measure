@@ -136,6 +136,13 @@ def run(
     if len(summary):
         summary.to_csv(output_dir / "summary_by_animal_and_view.csv", index=False)
 
+    excel_path = output_dir / "measurements.xlsx"
+    with pd.ExcelWriter(excel_path) as writer:
+        df.to_excel(writer, sheet_name="measurements", index=False)
+        if len(summary):
+            summary.to_excel(writer, sheet_name="summary_by_animal_and_view", index=False)
+    print(f"\nExcel version saved to {excel_path} (measurements + summary as separate sheets).")
+
     if overlay_paths:
         pdf_path = output_dir / "overlays_combined.pdf"
         build_overlay_pdf(overlay_paths, pdf_path)
