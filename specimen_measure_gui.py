@@ -126,14 +126,10 @@ style.map("TCombobox", fieldbackground=[("readonly", "white")],
           background=[("readonly", "white")],
           selectbackground=[("readonly", "white")],
           selectforeground=[("readonly", "black")])
-
-
-def _clear_combobox_selection(event):
-    """After picking an option, ttk shows the new text as if
-    text-selected (a dark highlight bar) until something else is
-    clicked -- clear that highlight immediately instead.
-    """
-    event.widget.selection_clear()
+# Note: a readonly ttk Combobox always renders its current value as if
+# text-selected (that's how "readonly" is visually indicated), so the fix
+# is recoloring select-state colors above, not clearing the selection --
+# clearing it would draw zero characters and leave the box looking blank.
 
 
 def _widen_dropdown_popup(combo: ttk.Combobox):
@@ -178,12 +174,12 @@ def selectInputClicked():
 
 
 DIRECTORY_BUTTON_WIDTH = 220
-LABEL_WIDTH = 34  # wide enough for the longest of the three row labels below
+LABEL_WIDTH = 24  # wide enough for the longest of the three row labels below
 
 row1 = _row(form)
-tk.Label(row1, text="Where is your sample images?", justify="right", width=LABEL_WIDTH,
+tk.Label(row1, text="Where is sample image?", justify="right", width=LABEL_WIDTH,
          bg=BG).pack(side="left")
-inputSelectButton = RoundedButton(row1, text="Select Folder...", command=selectInputClicked,
+inputSelectButton = RoundedButton(row1, text="Select Folder", command=selectInputClicked,
                                    width=DIRECTORY_BUTTON_WIDTH, height=32)
 inputSelectButton.pack(side="left", padx=6)
 
@@ -200,9 +196,9 @@ def selectOutputClicked():
 
 
 row2 = _row(form)
-tk.Label(row2, text="Where you wish to save results to?", justify="right", width=LABEL_WIDTH,
+tk.Label(row2, text="Where to save?", justify="right", width=LABEL_WIDTH,
          bg=BG).pack(side="left")
-outputSelectButton = RoundedButton(row2, text="Select Folder... (optional)", command=selectOutputClicked,
+outputSelectButton = RoundedButton(row2, text="Select Folder (optional)", command=selectOutputClicked,
                                     width=DIRECTORY_BUTTON_WIDTH, height=32)
 outputSelectButton.pack(side="left", padx=6)
 
@@ -221,7 +217,6 @@ specimenTypeMenu = ttk.Combobox(
 )
 specimenTypeMenu.pack(side="left", padx=6)
 _widen_dropdown_popup(specimenTypeMenu)
-specimenTypeMenu.bind("<<ComboboxSelected>>", _clear_combobox_selection)
 
 # ------------------------ Check boxes ------------------------------
 row4 = tk.Frame(form, bg=BG)
@@ -246,13 +241,23 @@ def _make_entry(parent, var):
 
 
 row5 = tk.Frame(form, bg=BG)
-row5.pack(pady=(6, 0))
 tk.Label(row5, text="Group 1 name (red):", bg=BG).pack(side="left", padx=(0, 4))
 genotypeLabelA = tk.StringVar(value="OX")
 _make_entry(row5, genotypeLabelA).pack(side="left", padx=(0, 16))
 tk.Label(row5, text="Group 2 name (blue):", bg=BG).pack(side="left", padx=(0, 4))
 genotypeLabelB = tk.StringVar(value="WT")
 _make_entry(row5, genotypeLabelB).pack(side="left")
+
+
+def _update_genotype_row_visibility(*_args):
+    if useGenotypeColors.get():
+        row5.pack(pady=(6, 0))
+    else:
+        row5.pack_forget()
+
+
+useGenotypeColors.trace_add("write", _update_genotype_row_visibility)
+_update_genotype_row_visibility()
 
 statusText = tk.StringVar(value="")
 tk.Label(main, textvariable=statusText, font=("arial", 10), fg="gray30", bg=BG).pack(pady=(10, 0))
@@ -352,7 +357,7 @@ def manualAnnotateClicked():
 manualFrame = tk.Frame(main, bg=BG)
 manualFrame.pack(pady=(8, 16))
 RoundedButton(
-    manualFrame, text="Manual Annotation...",
+    manualFrame, text="Manual Annotation",
     command=manualAnnotateClicked, width=220, height=32, font=("Arial", 12),
 ).pack()
 
