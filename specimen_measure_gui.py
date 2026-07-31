@@ -73,7 +73,7 @@ class RoundedButton(tk.Canvas):
         self._enabled = True
         self._shape = self.create_polygon(
             _rounded_rect_points(2, 2, width - 2, height - 2, radius),
-            smooth=True, fill=fill, outline=border, width=2,
+            smooth=True, fill=fill, outline=border, width=1,
         )
         self._text_item = self.create_text(width / 2, height / 2, text=text,
                                             fill=text_color, font=font)
@@ -115,6 +115,31 @@ window = tk.Tk()
 window.title(APP_TITLE)
 window.geometry("900x340")
 window.configure(bg=BG)
+
+# 'clam' is a fully Tk-drawn (non-native) ttk theme, which is what lets us
+# force the Combobox's field to plain white below -- the native 'aqua'
+# theme ignores fieldbackground on readonly comboboxes and always shows its
+# own grey/tan "readonly" tint instead.
+style = ttk.Style()
+style.theme_use("clam")
+style.configure("TCombobox", fieldbackground="white", background="white",
+                 foreground="black", bordercolor=ACCENT, arrowcolor=ACCENT)
+style.map("TCombobox", fieldbackground=[("readonly", "white")],
+          background=[("readonly", "white")])
+
+
+def _widen_dropdown_popup(combo: ttk.Combobox):
+    """The popdown listbox defaults to the (narrow) entry width, clipping
+    long option text. Widen just the popup list to fit the longest option,
+    leaving the closed box's own width untouched.
+    """
+    try:
+        popdown = combo.tk.eval(f"ttk::combobox::PopdownWindow {combo}")
+        longest = max((len(v) for v in combo["values"]), default=0)
+        combo.tk.call(f"{popdown}.f.l", "configure", "-width", longest)
+    except tk.TclError:
+        pass
+
 
 main = tk.Frame(window, bg=BG)
 main.pack(fill="both", expand=True, padx=20, pady=16)
@@ -187,6 +212,7 @@ specimenTypeMenu = ttk.Combobox(
     state="readonly",
 )
 specimenTypeMenu.pack(fill="both", expand=True)
+_widen_dropdown_popup(specimenTypeMenu)
 
 # ------------------------ Check boxes ------------------------------
 row4 = tk.Frame(form, bg=BG)
@@ -204,14 +230,20 @@ tk.Checkbutton(row4, text="Color axis lines by genotype", var=useGenotypeColors,
 # other filename convention can be typed in here instead (matched against
 # the filename, case-insensitive); the red/blue colors stay the same either
 # way, they are just applied to whichever two group names are given here.
+def _make_entry(parent, var):
+    return tk.Entry(parent, textvariable=var, width=10, bg="white", fg="black",
+                     relief="flat", bd=0, highlightthickness=1,
+                     highlightbackground=ACCENT, highlightcolor=ACCENT)
+
+
 row5 = tk.Frame(form, bg=BG)
 row5.pack(pady=(6, 0))
 tk.Label(row5, text="Group 1 name (red):", bg=BG).pack(side="left", padx=(0, 4))
 genotypeLabelA = tk.StringVar(value="OX")
-tk.Entry(row5, textvariable=genotypeLabelA, width=10).pack(side="left", padx=(0, 16))
+_make_entry(row5, genotypeLabelA).pack(side="left", padx=(0, 16))
 tk.Label(row5, text="Group 2 name (blue):", bg=BG).pack(side="left", padx=(0, 4))
 genotypeLabelB = tk.StringVar(value="WT")
-tk.Entry(row5, textvariable=genotypeLabelB, width=10).pack(side="left")
+_make_entry(row5, genotypeLabelB).pack(side="left")
 
 statusText = tk.StringVar(value="")
 tk.Label(main, textvariable=statusText, font=("arial", 10), fg="gray30", bg=BG).pack(pady=(10, 0))
