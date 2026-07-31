@@ -19,7 +19,7 @@ def _crop_for(orient_mode: str, **photo_kwargs):
 
 
 def test_axis_aligned_extent_matches_known_size_after_rotation():
-    crop, cal = _crop_for("vertical", heart_major_px=220.0, heart_minor_px=160.0)
+    crop, cal = _crop_for("apex_down", heart_major_px=220.0, heart_minor_px=160.0)
     assert crop.axes.major_axis_length_px == pytest.approx(220.0, rel=0.1)
     assert crop.axes.minor_axis_length_px == pytest.approx(160.0, rel=0.1)
 
@@ -29,11 +29,33 @@ def test_axis_endpoints_are_axis_aligned():
     the width line perfectly horizontal (constant y) -- that's the whole
     point of measuring a straight bounding-box extent post-rotation instead
     of a caliper line between two arbitrary extreme pixels."""
-    crop, _ = _crop_for("vertical", heart_major_px=220.0, heart_minor_px=160.0)
+    crop, _ = _crop_for("apex_down", heart_major_px=220.0, heart_minor_px=160.0)
     (x1, _y1), (x2, _y2) = crop.axes.major_endpoints
     assert x1 == pytest.approx(x2, abs=1e-6)
     (_x3, y3), (_x4, y4) = crop.axes.minor_endpoints
     assert y3 == pytest.approx(y4, abs=1e-6)
+
+
+def test_none_mode_does_not_rotate():
+    """orient_mode="none" is for non-heart tissue: no rotation, no
+    ventricle-only width logic -- just a caliper measurement through the
+    shape's own principal axes, cropped but otherwise left in the photo's
+    original orientation."""
+    img = make_synthetic_photo(heart_major_px=220.0, heart_minor_px=160.0)
+    gray = img[:, :, :3].mean(axis=2)
+    cal = calibrate(gray)
+    region = segment_heart(img, cal.ruler_side, cal.ruler_edge_px)
+    specimen_img = img[:, :cal.ruler_edge_px]
+    specimen_mask = region.mask[:, :cal.ruler_edge_px]
+
+    crop = rotate_for_display(specimen_img, specimen_mask, orient_mode="none")
+    assert not crop.flipped
+    assert crop.axes.major_axis_length_px == pytest.approx(220.0, rel=0.1)
+    assert crop.axes.minor_axis_length_px == pytest.approx(160.0, rel=0.1)
+    # both endpoints of each line must be real pixels, not just numerically close
+    (x1, y1), (x2, y2) = crop.axes.major_endpoints
+    assert crop.mask[int(y1), int(x1)]
+    assert crop.mask[int(y2), int(x2)]
 
 
 def _mask_with_appendage(body_width=200, body_height=400, appendage_extra=150):

@@ -132,10 +132,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-overlays", action="store_true",
                          help="Skip writing annotated QC overlay images (faster, smaller output).")
     parser.add_argument("--orientation", default="apex_down",
-                         choices=["apex_down", "vertical", "horizontal"],
-                         help="Overlay orientation convention (default: apex_down, a heart-specific "
-                              "convention -- atria/base up, apex down). Use 'vertical' or 'horizontal' "
-                              "for other organs/tumors with no consistent 'this end goes on top'.")
+                         choices=["apex_down", "none"],
+                         help="Measurement/orientation mode (default: apex_down). 'apex_down' is the "
+                              "heart-specific convention: rotates atria/base up, apex down, and "
+                              "measures width excluding the atria. 'none' is for other tissue/tumors: "
+                              "no rotation, and length/width simply cross the specimen's own center "
+                              "and stop at its edge.")
     parser.add_argument("--no-genotype-colors", action="store_true",
                          help="Don't color axis lines by the OX/WT heart-study genotype convention; "
                               "use a single neutral color for all images.")

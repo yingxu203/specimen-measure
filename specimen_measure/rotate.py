@@ -16,7 +16,7 @@ from .segmentation import AxesInfo, compute_axes
 
 BACKGROUND_FILL = 25  # dark gray, close to the true dark background color
 
-OrientMode = Literal["apex_down", "vertical", "horizontal"]
+OrientMode = Literal["apex_down", "none"]
 
 # Below this ratio between the two halves' concavity deficit, the apex/base
 # call is a close guess rather than a clear one -- worth flagging for a
@@ -238,6 +238,22 @@ def _base_end_is_at_top(top_deficit: float, bottom_deficit: float) -> bool:
     return top_deficit >= bottom_deficit
 
 
+def _crop_to_mask(img: np.ndarray, mask: np.ndarray, margin: int) -> tuple[np.ndarray, np.ndarray]:
+    """Tightly crop `img`/`mask` to the mask's own extent plus a margin."""
+    rows = np.any(mask, axis=1)
+    cols = np.any(mask, axis=0)
+    r0, r1 = np.nonzero(rows)[0][[0, -1]]
+    c0, c1 = np.nonzero(cols)[0][[0, -1]]
+
+    h, w = mask.shape
+    r0 = max(r0 - margin, 0)
+    r1 = min(r1 + margin, h - 1)
+    c0 = max(c0 - margin, 0)
+    c1 = min(c1 + margin, w - 1)
+
+    return img[r0:r1 + 1, c0:c1 + 1], mask[r0:r1 + 1, c0:c1 + 1]
+
+
 def rotate_for_display(
     specimen_img: np.ndarray,
     specimen_mask: np.ndarray,
@@ -245,25 +261,40 @@ def rotate_for_display(
     margin: int = 40,
     manual_flip: bool = False,
 ) -> RotatedCrop:
-    """Rotate+crop a specimen for display.
+    """Prepare a specimen crop for display and measurement.
 
-    - "apex_down": long axis vertical, then flipped if needed so the wider/
-      notched end (a heart's base/atria) ends up on top and the tapering end
-      (apex) on the bottom. Only meaningful for a heart-like elongated shape
-      with a genuinely asymmetric base vs. apex.
-    - "vertical": long axis vertical, no flip (use for organs/tumors with no
-      consistent "this end goes on top" convention).
-    - "horizontal": long axis horizontal, no flip.
+    - "apex_down" (heart-specific): rotates the long axis vertical, then
+      flips if needed so the wider/notched end (a heart's base/atria) ends
+      up on top and the tapering end (apex) on the bottom, and measures
+      length/width as the straight vertical/horizontal extent of the
+      rotated, axis-aligned bounding box, with width further restricted to
+      exclude the atria (see `axis_aligned_extent`/`_core_body_width_row`).
+      Only meaningful for a heart-like elongated shape with a genuinely
+      asymmetric base vs. apex.
+    - "none" (other tissue/tumors): no rotation at all -- the crop stays in
+      the photo's original orientation. Length/width are measured with
+      `compute_axes`: a line through the shape's own principal axes
+      (found via image moments, so it follows however the specimen
+      actually sits), touching the real extreme pixels at both ends. This
+      is the simple "crosses the center, stops at the edge" measurement,
+      with no heart-specific rotation or ventricle-only width logic.
 
-    `manual_flip` XORs with whatever the automatic orientation decides --
-    the automatic base/apex call is a heuristic and won't always be right
-    (torn specimens, unusual shapes), so this gives a one-flag override
-    (e.g. a UI checkbox) to correct it without needing to reproduce the
-    whole rotation from scratch.
+    `manual_flip` (apex_down only) XORs with whatever the automatic
+    orientation decides -- the automatic base/apex call is a heuristic and
+    won't always be right (torn specimens, unusual shapes), so this gives a
+    one-flag override (e.g. a UI checkbox) to correct it without needing to
+    reproduce the whole rotation from scratch.
     """
+    if orient_mode == "none":
+        cropped_img, cropped_mask = _crop_to_mask(specimen_img, specimen_mask, margin)
+        axes = compute_axes(cropped_mask)
+        return RotatedCrop(
+            image=cropped_img, mask=cropped_mask, axes=axes,
+            flipped=False, low_confidence_orientation=False,
+        )
+
     axes = compute_axes(specimen_mask)
-    target_deg = 90.0 if orient_mode == "horizontal" else 0.0
-    rot_deg = _rotation_degrees(axes.orientation_rad, target_deg)
+    rot_deg = _rotation_degrees(axes.orientation_rad, target_deg=0.0)
 
     rotated_img = ndi_rotate(
         specimen_img.astype(float), angle=rot_deg, axes=(0, 1), reshape=True,
@@ -276,34 +307,19 @@ def rotate_for_display(
         order=0, mode="constant", cval=0.0,
     ) > 0.5
 
-    rows = np.any(rotated_mask, axis=1)
-    cols = np.any(rotated_mask, axis=0)
-    r0, r1 = np.nonzero(rows)[0][[0, -1]]
-    c0, c1 = np.nonzero(cols)[0][[0, -1]]
+    cropped_img, cropped_mask = _crop_to_mask(rotated_img, rotated_mask, margin)
 
-    h, w = rotated_mask.shape
-    r0 = max(r0 - margin, 0)
-    r1 = min(r1 + margin, h - 1)
-    c0 = max(c0 - margin, 0)
-    c1 = min(c1 + margin, w - 1)
+    top_deficit, bottom_deficit = _base_deficit_split(cropped_mask)
+    want_flip = not _base_end_is_at_top(top_deficit, bottom_deficit)
+    lo, hi = sorted([top_deficit, bottom_deficit])
+    low_confidence_orientation = (hi / lo if lo > 0 else float("inf")) < LOW_CONFIDENCE_ORIENTATION_RATIO
 
-    cropped_img = rotated_img[r0:r1 + 1, c0:c1 + 1]
-    cropped_mask = rotated_mask[r0:r1 + 1, c0:c1 + 1]
-
-    low_confidence_orientation = False
-    if orient_mode == "apex_down":
-        top_deficit, bottom_deficit = _base_deficit_split(cropped_mask)
-        want_flip = not _base_end_is_at_top(top_deficit, bottom_deficit)
-        lo, hi = sorted([top_deficit, bottom_deficit])
-        low_confidence_orientation = (hi / lo if lo > 0 else float("inf")) < LOW_CONFIDENCE_ORIENTATION_RATIO
-    else:
-        want_flip = False
     want_flip = want_flip != manual_flip  # XOR
     if want_flip:
         cropped_img = np.flipud(cropped_img)
         cropped_mask = np.flipud(cropped_mask)
 
-    cropped_axes = axis_aligned_extent(cropped_mask, exclude_appendage=(orient_mode == "apex_down"))
+    cropped_axes = axis_aligned_extent(cropped_mask, exclude_appendage=True)
     return RotatedCrop(
         image=cropped_img, mask=cropped_mask, axes=cropped_axes, flipped=want_flip,
         low_confidence_orientation=low_confidence_orientation,

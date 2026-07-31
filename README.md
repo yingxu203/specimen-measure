@@ -36,54 +36,55 @@ For each image:
    brightness but still stands out clearly from a near-black background in
    at least one color channel. Otsu thresholding + morphological cleanup +
    largest-connected-component selection isolates the specimen.
-3. **Rotation** ([`specimen_measure/rotate.py`](specimen_measure/rotate.py)) — the specimen crop is
-   rotated (via `compute_axes`' principal-axis orientation) to a standard
-   orientation and tightly cropped, so measurements and overlays are
-   consistent and easy to compare regardless of how the specimen happened to
-   sit in the original photo. Three `orient_mode` options:
-   - `apex_down` (default): long axis vertical, then flipped if needed so
-     the wider/notched end (a heart's base/atria) is on top and the
-     tapering end (apex) is on the bottom. Uses a convex-hull-deficit
-     heuristic (the base has concave notches from the atria/vessels; the
-     apex is smooth and convex) — heart-specific, and a heuristic, so it
-     won't always be right (see [Manual correction](#manual-correction)).
-   - `vertical`: long axis vertical, no flip — for tumors/other organs with
-     no "this end goes on top" convention.
-   - `horizontal`: long axis horizontal, no flip.
-4. **Measurement** (`rotate.py`'s `axis_aligned_extent`) — taken *after*
-   rotation, as the straight vertical extent (height) and horizontal extent
-   (width) of the rotated, axis-aligned bounding box — not a caliper line
-   between two specific extreme pixels, which for an asymmetric/notched
-   shape can visibly tilt even after "straightening" the specimen, since the
-   two extremes along the principal axis are often not on the same
-   vertical/horizontal line. A straight bounding-box extent is also more
-   forgiving of small rotation-angle imperfections and matches how someone
-   would actually measure a specimen with a ruler held straight after
-   orienting it. Area is simply the segmented pixel count (unaffected by
-   rotation), converted with the same per-image scale.
+3. **Rotation/measurement** ([`specimen_measure/rotate.py`](specimen_measure/rotate.py)) — behavior
+   depends on `orient_mode`, two options:
 
-   For `apex_down`, width gets one more correction (`rotate.py`'s
-   `_core_body_width_row`): "width" specifically means the ventricles,
-   never the atria. A naive bounding-box width consistently overshot
-   hand-annotated reference measurements by 4-18%, always in the same
-   direction, because a heart's atria/auricle stick out sideways near the
-   base and widen exactly the rows they occupy. Rather than just reducing
-   that influence, this finds the actual atria/ventricle boundary: the
-   atria show up as concave notches in the silhouette (a gap between the
-   mask and its own convex hull), while the ventricle body is smooth and
-   convex, so the last row (scanning down from the top, within the region
-   the base can plausibly occupy) with a meaningfully concave silhouette
-   marks where the atria end. Only rows strictly below that (plus a small
-   safety margin) are eligible for the width measurement, so the result
-   cannot include any atria-influenced row at all. Matches hand annotations
-   within -3.6% to +1.2% (versus -12% to +12% for an earlier version that
-   only reduced, rather than strictly excluded, the atria's influence).
-   This step is skipped for `vertical`/`horizontal` orientation modes,
-   since it assumes a heart-like atria/ventricle distinction that does not
-   apply to round tumors or other organs.
-5. **Overlay drawing** (`measure.py`) — the rotated crop gets the specimen
-   outline (green), long axis line labeled **L** and short axis line
-   labeled **W**, both perfectly straight/axis-aligned. Optionally colored by
+   - **`apex_down`** (default, heart-specific): the specimen crop is
+     rotated to a standard orientation — long axis vertical, then flipped
+     if needed so the wider/notched end (a heart's base/atria) is on top
+     and the tapering end (apex) is on the bottom, using a convex-hull-
+     deficit heuristic (the base has concave notches from the atria/
+     vessels; the apex is smooth and convex) — heart-specific, and a
+     heuristic, so it won't always be right (see
+     [Manual correction](#manual-correction)). Length/width are then
+     measured as the straight vertical/horizontal extent of the rotated,
+     axis-aligned bounding box (`axis_aligned_extent`) — not a caliper
+     line between two specific extreme pixels, which for an
+     asymmetric/notched shape can visibly tilt even after "straightening"
+     the specimen, since the two extremes along the principal axis are
+     often not on the same vertical/horizontal line. Width gets one more
+     correction (`_core_body_width_row`): "width" specifically means the
+     ventricles, never the atria. A naive bounding-box width consistently
+     overshot hand-annotated reference measurements by 4-18%, always in
+     the same direction, because a heart's atria/auricle stick out
+     sideways near the base and widen exactly the rows they occupy.
+     Rather than just reducing that influence, this finds the actual
+     atria/ventricle boundary: the atria show up as concave notches in
+     the silhouette (a gap between the mask and its own convex hull),
+     while the ventricle body is smooth and convex, so the last row
+     (scanning down from the top, within the region the base can
+     plausibly occupy) with a meaningfully concave silhouette marks
+     where the atria end. Only rows strictly below that (plus a small
+     safety margin) are eligible for the width measurement, so the
+     result cannot include any atria-influenced row at all. Matches hand
+     annotations within -3.6% to +1.2% (versus -12% to +12% for an
+     earlier version that only reduced, rather than strictly excluded,
+     the atria's influence).
+   - **`none`** (other tissue/tumors): no rotation at all — the crop
+     stays in the photo's original orientation, just tightly cropped to
+     the specimen. Length/width are measured with `compute_axes`: a line
+     through the shape's own principal axes (found via image moments, so
+     it follows however the specimen actually sits), with both endpoints
+     at the real extreme pixels — a straightforward "crosses the center,
+     stops at the edge" measurement, with no heart-specific rotation or
+     ventricle-only width logic.
+
+   Either way, area is simply the segmented pixel count (unaffected by
+   rotation), converted with the same per-image scale.
+4. **Overlay drawing** (`measure.py`) — the crop gets the specimen
+   outline (green) and long axis line labeled **L** and short axis line
+   labeled **W** (perfectly straight/axis-aligned for `apex_down`; following
+   the specimen's own principal axes for `none`). Optionally colored by
    a heart-study genotype convention (**red `#FF2C2C`** for OX/OF/OM
    animals, **blue `#0000FF`** for WT/WF/WM animals) — toggle this off for
    other specimen types — plus a text label with the long/short/area/scale
@@ -166,7 +167,7 @@ Options:
 | `--pattern` | `*.tif` | glob pattern for image files |
 | `--ruler-side` | `auto` | `left`/`right`/`auto` — which edge of the frame the ruler is on |
 | `--no-overlays` | off | skip writing overlay PNGs (faster, smaller output) |
-| `--orientation` | `apex_down` | `apex_down`/`vertical`/`horizontal` — see [How it works](#how-it-works) step 4 |
+| `--orientation` | `apex_down` | `apex_down` (heart) / `none` (other tissue, no rotation) — see [How it works](#how-it-works) step 3 |
 | `--no-genotype-colors` | off | don't use the heart-study OX/WT color convention; single neutral color instead |
 
 ## Output schema (`measurements.csv`)
@@ -241,7 +242,7 @@ naming convention if you want them populated.
   use the manual override when it's wrong.
 - The `apex_down` orientation heuristic is heart-specific and won't apply
   to round/irregular tumors or other organs with no base/apex distinction —
-  use `vertical` or `horizontal` for those.
+  use `none` for those.
 - Most heavily validated on the mouse heart photo setup this was originally
   built for; the underlying calibration/segmentation/measurement approach
   is organ-agnostic but newer to other specimen types.

@@ -25,9 +25,8 @@ from specimen_measure.measure import get_rotated_crop, measure_file
 st.set_page_config(page_title="specimen-measure", layout="wide")
 
 ORIENT_OPTIONS = {
-    "Heart (atria up, apex down)": "apex_down",
-    "Other elongated organ/tumor (long axis vertical)": "vertical",
-    "Other (long axis horizontal)": "horizontal",
+    "Heart (rotate, atria up/apex down, ventricle-only width)": "apex_down",
+    "Other tissue/tumor (no rotation, simple center-to-edge measurement)": "none",
 }
 
 for key, default in [
@@ -40,8 +39,9 @@ for key, default in [
 st.title("specimen-measure")
 st.caption(
     "Ruler-calibrated long-axis / short-axis / area measurement for excised organ or tumor "
-    "specimen photos. Each overlay is rotated to a standard orientation for easy side-by-side "
-    "comparison. Front and back photos of the same animal are always measured and summarized "
+    "specimen photos. Heart mode rotates each overlay to a standard orientation for easy "
+    "side-by-side comparison; other-tissue mode measures directly in the photo's own "
+    "orientation. Front and back photos of the same animal are always measured and summarized "
     "separately, never averaged together."
 )
 
@@ -190,12 +190,15 @@ if df is not None:
         choice = st.selectbox("Choose an image", sorted(overlay_paths.keys()))
         orig_path = path_by_name[choice]
 
-        flip = st.checkbox(
-            "Flip orientation (top/bottom) for this image",
-            value=st.session_state.flip_by_name.get(choice, False),
-            key=f"flip_cb_{choice}",
-        )
-        st.session_state.flip_by_name[choice] = flip
+        if orient_mode == "apex_down":
+            flip = st.checkbox(
+                "Flip orientation (top/bottom) for this image",
+                value=st.session_state.flip_by_name.get(choice, False),
+                key=f"flip_cb_{choice}",
+            )
+            st.session_state.flip_by_name[choice] = flip
+        else:
+            flip = False
 
         cache_key = (choice, flip)
         if cache_key not in st.session_state.render_cache:
