@@ -35,6 +35,27 @@ DEFAULT_AXIS_COLOR = (255, 215, 0)  # gold -- used when genotype coloring is off
 MIN_CONFIDENT_TICKS = 10
 
 
+def _resolve_genotype(
+    filename: str, default_genotype: str | None, genotype_labels: tuple[str, str] | None,
+) -> str | None:
+    """When the user supplies their own two genotype group names (instead of
+    this study's OX/WT convention), prefer whichever one appears in the
+    filename (case-insensitive) over the OX/WT-specific auto-detection in
+    metadata.parse_filename. Falls back to `default_genotype` (the OX/WT
+    result) if neither custom label appears -- e.g. for animals whose
+    genotype is only encoded via the animal-ID-prefix fallback.
+    """
+    if not genotype_labels:
+        return default_genotype
+    label_a, label_b = genotype_labels
+    lower = filename.lower()
+    if label_a and label_a.lower() in lower:
+        return label_a
+    if label_b and label_b.lower() in lower:
+        return label_b
+    return default_genotype
+
+
 @dataclass
 class MeasurementResult:
     filename: str
@@ -113,11 +134,13 @@ def measure_file(
     orient_mode: OrientMode = "apex_down",
     use_genotype_colors: bool = True,
     manual_flip: bool = False,
+    genotype_labels: tuple[str, str] | None = None,
 ) -> MeasurementResult:
     info = parse_filename(path.name)
+    genotype = _resolve_genotype(path.name, info.genotype, genotype_labels)
     base_fields = dict(
         filename=path.name,
-        genotype=info.genotype,
+        genotype=genotype,
         treatment=info.treatment,
         animal_id=info.animal_id,
         view=info.view,
@@ -177,8 +200,8 @@ def measure_file(
 
     if overlay_path is not None:
         _draw_overlay(
-            crop, cal, info.genotype, long_axis_mm, short_axis_mm, area_mm2, overlay_path,
-            use_genotype_colors=use_genotype_colors,
+            crop, cal, genotype, long_axis_mm, short_axis_mm, area_mm2, overlay_path,
+            use_genotype_colors=use_genotype_colors, genotype_labels=genotype_labels,
         )
 
     return MeasurementResult(
@@ -200,6 +223,7 @@ def _draw_overlay(
     area_mm2: float,
     out_path: Path,
     use_genotype_colors: bool = True,
+    genotype_labels: tuple[str, str] | None = None,
 ) -> None:
     """Draw the specimen outline and axis lines on an already-rotated crop
     (see `rotate_for_display`/`orient_mode`), for easy visual comparison
@@ -214,7 +238,14 @@ def _draw_overlay(
     for contour in sk_measure.find_contours(crop.mask.astype(float), 0.5):
         draw.line([(x, y) for y, x in contour], fill=(0, 255, 0), width=3)
 
-    color = GENOTYPE_COLORS.get(genotype or "", DEFAULT_AXIS_COLOR) if use_genotype_colors else DEFAULT_AXIS_COLOR
+    if use_genotype_colors:
+        if genotype_labels and genotype_labels[0] and genotype_labels[1]:
+            colors = {genotype_labels[0]: GENOTYPE_COLORS["OX"], genotype_labels[1]: GENOTYPE_COLORS["WT"]}
+        else:
+            colors = GENOTYPE_COLORS
+        color = colors.get(genotype or "", DEFAULT_AXIS_COLOR)
+    else:
+        color = DEFAULT_AXIS_COLOR
     (mx1, my1), (mx2, my2) = crop.axes.major_endpoints
     draw.line([(mx1, my1), (mx2, my2)], fill=color, width=3)
     (nx1, ny1), (nx2, ny2) = crop.axes.minor_endpoints

@@ -75,6 +75,7 @@ def run(
     orient_mode: OrientMode = "apex_down",
     use_genotype_colors: bool = True,
     force_flip: list[str] | None = None,
+    genotype_labels: tuple[str, str] | None = None,
 ) -> pd.DataFrame:
     files = find_images(input_dir, pattern)
     if not files:
@@ -92,7 +93,7 @@ def run(
         result = measure_file(
             path, ruler_side=ruler_side, overlay_path=overlay_path,
             orient_mode=orient_mode, use_genotype_colors=use_genotype_colors,
-            manual_flip=path.name in flip_set,
+            manual_flip=path.name in flip_set, genotype_labels=genotype_labels,
         )
         rows.append(result.to_row())
         status = "ok" if result.ok else f"FAILED: {result.error}"
