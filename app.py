@@ -154,6 +154,15 @@ if df is not None:
             f"worth a visual check for possible cropping: " + ", ".join(touching["filename"])
         )
 
+    low_orient = ok[ok["low_confidence_orientation"].fillna(False)]
+    if len(low_orient):
+        st.warning(
+            f"{len(low_orient)} image(s) have a low-confidence apex/base orientation guess (the "
+            f"atria/ventricle split was a close call) — mm values are unaffected, but the overlay "
+            f"may show it upside down. Check the overlay below and use the flip checkbox if so: "
+            + ", ".join(low_orient["filename"])
+        )
+
     st.subheader("Measurements")
     display_df = _display_df()
     st.caption(

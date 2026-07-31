@@ -98,6 +98,14 @@ def run(
               f"measuring these by hand:")
         for fn in low_conf["filename"]:
             print(f"    {fn}")
+    low_orient = ok[ok["low_confidence_orientation"].fillna(False)]
+    if len(low_orient):
+        print(f"{len(low_orient)} image(s) have a low-confidence apex/base orientation guess "
+              f"(the atria/ventricle split was a close call) — mm values are unaffected, but the "
+              f"overlay may show it upside down; check the overlay and use the UI's flip checkbox "
+              f"if so:")
+        for fn in low_orient["filename"]:
+            print(f"    {fn}")
 
     summary = summarize_by_animal_and_view(df)
     if len(summary):

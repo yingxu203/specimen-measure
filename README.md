@@ -96,8 +96,9 @@ heuristics and won't be right 100% of the time (torn specimens, unusual
 shapes, a busy/reflective background). Rather than silently trusting every
 automatic result:
 
-- Every result gets a `touches_frame_edge` and `low_confidence_calibration`
-  QC flag (see below) so you know which rows deserve a closer look.
+- Every result gets a `touches_frame_edge`, `low_confidence_calibration`,
+  and `low_confidence_orientation` QC flag (see below) so you know which
+  rows deserve a closer look.
 - [`annotate_specimen.py`](annotate_specimen.py) lets you build a ground-truth
   reference set: click 2 points for length and 2 for width on a folder of
   images (matplotlib window, `u` = undo, `q` = save + next, resumable), saved
@@ -181,6 +182,7 @@ Options:
 | `n_ruler_ticks` | number of ruler ticks the calibration found (see below) |
 | `touches_frame_edge` | specimen mask touches the image border — possible crop/clipping, worth a visual check |
 | `low_confidence_calibration` | fewer than 10 ruler ticks were found; scale may be off by ~10-20%, worth a visual check or a manual re-measure |
+| `low_confidence_orientation` | (`apex_down` only) the atria/ventricle split was a close call; mm values are unaffected (flip is purely cosmetic), but the overlay may show it upside down |
 | `genotype`, `treatment`, `animal_id`, `view`, `replicate`, `cohort`, `is_sv_variant`, `notes` | best-effort fields parsed from the filename (see below); `None`/blank if not present |
 
 The UI additionally shows/exports `long_axis_mm_manual`, `short_axis_mm_manual`,
@@ -199,6 +201,17 @@ These rows are flagged `low_confidence_calibration = True` rather than
 silently trusted — the overlay PNG also stamps `[LOW-CONFIDENCE
 CALIBRATION]` on the image itself. Treat these as "measure this one by hand"
 candidates (see [Manual correction](#manual-correction)), not as ready-to-use numbers.
+
+## Orientation confidence
+
+The `apex_down` atria/base call (see step 3 above) compares how much
+concavity each half of the shape has -- most photos have a clear winner
+(one side's concavity is at least ~1.5x the other's), but a few are much
+closer. Rows where the two halves are within 1.3x of each other are flagged
+`low_confidence_orientation = True`: the *measurement* is unaffected (the
+flip is purely cosmetic, applied after height/width are already computed),
+but the overlay's apex/base direction is a coin flip and may be upside
+down. Check the overlay and use the UI's per-image flip checkbox if so.
 
 ## Filename metadata parsing
 

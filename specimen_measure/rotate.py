@@ -18,6 +18,14 @@ BACKGROUND_FILL = 25  # dark gray, close to the true dark background color
 
 OrientMode = Literal["apex_down", "vertical", "horizontal"]
 
+# Below this ratio between the two halves' concavity deficit, the apex/base
+# call is a close guess rather than a clear one -- worth flagging for a
+# visual check or manual flip. Chosen from a natural gap in the real dataset
+# this was validated against: known-correct images mostly ran >=1.5x, with a
+# cluster of genuinely ambiguous ones (one confirmed wrong by inspection) at
+# 1.14-1.26x.
+LOW_CONFIDENCE_ORIENTATION_RATIO = 1.3
+
 
 @dataclass
 class RotatedCrop:
@@ -25,6 +33,7 @@ class RotatedCrop:
     mask: np.ndarray
     axes: AxesInfo  # recomputed in the rotated+cropped frame, ready to draw
     flipped: bool  # whether the apex/base flip was applied
+    low_confidence_orientation: bool  # apex/base call was a close guess (apex_down only)
 
 
 def _rotation_degrees(orientation_rad: float, target_deg: float) -> float:
@@ -105,6 +114,45 @@ def _core_body_width_row(
     return r0 + local_idx, float(lefts[local_idx]), float(rights[local_idx])
 
 
+def _best_length_column(mask: np.ndarray) -> tuple[float, float, float]:
+    """Find the column whose own contiguous run of mask pixels comes
+    closest to the shape's true total height, so the length line can be
+    drawn from real, always-present pixels instead of the bounding box's
+    center column.
+
+    The bounding box's true top/bottom rows (from `np.any` over all
+    columns) don't necessarily occur at the same column -- for an
+    asymmetric shape (e.g. an atria lobe reaching further up on one side
+    than the shape's overall center), a line drawn at the center column
+    can start above or end below where the mask actually has any pixels
+    at that column, visibly poking out past the green contour into the
+    background. Searching for the tallest single column's own extent
+    keeps the line entirely inside real pixels while normally losing well
+    under 2% of the true height (validated against several real photos).
+
+    Returns (x, top_row, bottom_row); prefers a fully contiguous column
+    (no internal gaps) over a taller one with gaps, for a clean line.
+    """
+    rows = np.nonzero(np.any(mask, axis=1))[0]
+    r0, r1 = int(rows[0]), int(rows[-1])
+    cols = np.nonzero(np.any(mask, axis=0))[0]
+
+    best = None  # (has_gap, -span, x, top, bottom)
+    for x in cols:
+        rows_at_col = np.nonzero(mask[r0:r1 + 1, x])[0]
+        if len(rows_at_col) == 0:
+            continue
+        top, bottom = int(rows_at_col[0]), int(rows_at_col[-1])
+        span = bottom - top
+        has_gap = (span + 1) != len(rows_at_col)
+        key = (has_gap, -span)
+        if best is None or key < best[0]:
+            best = (key, x, top, bottom)
+
+    _, x, top, bottom = best
+    return float(x), float(r0 + top), float(r0 + bottom)
+
+
 def axis_aligned_extent(mask: np.ndarray, exclude_appendage: bool = False) -> AxesInfo:
     """Measure a mask's straight vertical/horizontal extent (an axis-aligned
     bounding box), meant to be called *after* rotating the mask to a
@@ -119,17 +167,27 @@ def axis_aligned_extent(mask: np.ndarray, exclude_appendage: bool = False) -> Ax
     matches how someone would actually measure a specimen with a ruler held
     straight after orienting it: total height, total width.
 
+    The height (major axis) line uses `_best_length_column` rather than the
+    bounding box's center column: the shape's true topmost and bottommost
+    rows don't necessarily fall at the same column (e.g. an atria lobe
+    reaching further up on one side than the shape's overall center), so a
+    line fixed at the center column could start or end at a background
+    pixel, visibly poking out past the green contour. Using the tallest
+    single column's own extent keeps the line entirely inside real pixels
+    while normally losing well under 2% of the true bounding-box height.
+
     `exclude_appendage` (heart-specific -- pass only when orient_mode is
     "apex_down") swaps the naive full-mask width for `_core_body_width_row`,
     since ground-truth annotation showed the naive width consistently
-    overshoots by including a heart's auricle. Height/length is unaffected:
-    it already matched manual annotations well without correction.
+    overshoots by including a heart's auricle.
     """
     rows = np.nonzero(np.any(mask, axis=1))[0]
     cols = np.nonzero(np.any(mask, axis=0))[0]
     r0, r1 = float(rows[0]), float(rows[-1])
-    cx = (cols[0] + cols[-1]) / 2
+    cx_bbox = (cols[0] + cols[-1]) / 2
     cy = (r0 + r1) / 2
+
+    length_x, length_top, length_bottom = _best_length_column(mask)
 
     if exclude_appendage:
         y_row, c0, c1 = _core_body_width_row(mask)
@@ -139,16 +197,31 @@ def axis_aligned_extent(mask: np.ndarray, exclude_appendage: bool = False) -> Ax
         width_y = cy
 
     return AxesInfo(
-        centroid_xy=(cx, cy),
+        centroid_xy=(cx_bbox, cy),
         orientation_rad=0.0,
-        major_endpoints=((cx, r0), (cx, r1)),        # vertical line
+        major_endpoints=((length_x, length_top), (length_x, length_bottom)),  # vertical line
         minor_endpoints=((c0, width_y), (c1, width_y)),  # horizontal line
-        major_axis_length_px=r1 - r0,
+        major_axis_length_px=length_bottom - length_top,
         minor_axis_length_px=c1 - c0,
     )
 
 
-def _base_end_is_at_top(mask: np.ndarray) -> bool:
+def _base_deficit_split(mask: np.ndarray) -> tuple[float, float]:
+    """Concavity ("hull-but-not-mask" area) in the top half vs bottom half
+    of a *vertically-oriented* mask -- see `_base_end_is_at_top`."""
+    hull = convex_hull_image(mask)
+    deficit = hull & ~mask
+
+    rows_with_content = np.nonzero(np.any(mask, axis=1))[0]
+    r0, r1 = int(rows_with_content[0]), int(rows_with_content[-1])
+    mid = (r0 + r1) // 2
+
+    top_deficit = float(deficit[r0:mid, :].sum())
+    bottom_deficit = float(deficit[mid:r1 + 1, :].sum())
+    return top_deficit, bottom_deficit
+
+
+def _base_end_is_at_top(top_deficit: float, bottom_deficit: float) -> bool:
     """Heuristic for which end of a *vertically-oriented* mask is the "base"
     (e.g. a heart's atria/auricles) versus the "apex".
 
@@ -162,15 +235,6 @@ def _base_end_is_at_top(mask: np.ndarray) -> bool:
     Returns True if the top half has more concavity (i.e. the base is
     already at top, no flip needed).
     """
-    hull = convex_hull_image(mask)
-    deficit = hull & ~mask
-
-    rows_with_content = np.nonzero(np.any(mask, axis=1))[0]
-    r0, r1 = int(rows_with_content[0]), int(rows_with_content[-1])
-    mid = (r0 + r1) // 2
-
-    top_deficit = deficit[r0:mid, :].sum()
-    bottom_deficit = deficit[mid:r1 + 1, :].sum()
     return top_deficit >= bottom_deficit
 
 
@@ -226,11 +290,21 @@ def rotate_for_display(
     cropped_img = rotated_img[r0:r1 + 1, c0:c1 + 1]
     cropped_mask = rotated_mask[r0:r1 + 1, c0:c1 + 1]
 
-    want_flip = orient_mode == "apex_down" and not _base_end_is_at_top(cropped_mask)
+    low_confidence_orientation = False
+    if orient_mode == "apex_down":
+        top_deficit, bottom_deficit = _base_deficit_split(cropped_mask)
+        want_flip = not _base_end_is_at_top(top_deficit, bottom_deficit)
+        lo, hi = sorted([top_deficit, bottom_deficit])
+        low_confidence_orientation = (hi / lo if lo > 0 else float("inf")) < LOW_CONFIDENCE_ORIENTATION_RATIO
+    else:
+        want_flip = False
     want_flip = want_flip != manual_flip  # XOR
     if want_flip:
         cropped_img = np.flipud(cropped_img)
         cropped_mask = np.flipud(cropped_mask)
 
     cropped_axes = axis_aligned_extent(cropped_mask, exclude_appendage=(orient_mode == "apex_down"))
-    return RotatedCrop(image=cropped_img, mask=cropped_mask, axes=cropped_axes, flipped=want_flip)
+    return RotatedCrop(
+        image=cropped_img, mask=cropped_mask, axes=cropped_axes, flipped=want_flip,
+        low_confidence_orientation=low_confidence_orientation,
+    )

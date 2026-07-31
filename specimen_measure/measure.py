@@ -48,6 +48,7 @@ class MeasurementResult:
     ruler_side: str | None
     touches_frame_edge: bool | None
     low_confidence_calibration: bool | None
+    low_confidence_orientation: bool | None
     genotype: str | None
     treatment: str | None
     animal_id: str | None
@@ -133,7 +134,8 @@ def measure_file(
             ok=False, error=f"failed to read image: {exc}",
             long_axis_mm=None, short_axis_mm=None, area_mm2=None,
             px_per_mm=None, n_ruler_ticks=None, ruler_side=None,
-            touches_frame_edge=None, low_confidence_calibration=None, **base_fields,
+            touches_frame_edge=None, low_confidence_calibration=None,
+            low_confidence_orientation=None, **base_fields,
         )
 
     gray = img[:, :, :3].mean(axis=2)
@@ -145,7 +147,8 @@ def measure_file(
             ok=False, error=f"calibration failed: {exc}",
             long_axis_mm=None, short_axis_mm=None, area_mm2=None,
             px_per_mm=None, n_ruler_ticks=None, ruler_side=None,
-            touches_frame_edge=None, low_confidence_calibration=None, **base_fields,
+            touches_frame_edge=None, low_confidence_calibration=None,
+            low_confidence_orientation=None, **base_fields,
         )
     low_confidence = cal.n_ticks < MIN_CONFIDENT_TICKS
 
@@ -156,7 +159,8 @@ def measure_file(
             ok=False, error=f"segmentation failed: {exc}",
             long_axis_mm=None, short_axis_mm=None, area_mm2=None,
             px_per_mm=cal.px_per_mm, n_ruler_ticks=cal.n_ticks, ruler_side=cal.ruler_side,
-            touches_frame_edge=None, low_confidence_calibration=low_confidence, **base_fields,
+            touches_frame_edge=None, low_confidence_calibration=low_confidence,
+            low_confidence_orientation=None, **base_fields,
         )
 
     # Measurement is taken *after* rotating to the standard orientation: a
@@ -182,6 +186,7 @@ def measure_file(
         long_axis_mm=long_axis_mm, short_axis_mm=short_axis_mm, area_mm2=area_mm2,
         px_per_mm=cal.px_per_mm, n_ruler_ticks=cal.n_ticks, ruler_side=cal.ruler_side,
         touches_frame_edge=region.touches_frame_edge, low_confidence_calibration=low_confidence,
+        low_confidence_orientation=crop.low_confidence_orientation,
         **base_fields,
     )
 
@@ -224,6 +229,8 @@ def _draw_overlay(
     )
     if cal.n_ticks < MIN_CONFIDENT_TICKS:
         label += "  [LOW-CONFIDENCE CALIBRATION]"
+    if crop.low_confidence_orientation:
+        label += "  [LOW-CONFIDENCE ORIENTATION -- check apex/base]"
     draw.text((10, 10), label, fill=(255, 255, 0))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)

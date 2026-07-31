@@ -73,6 +73,39 @@ def test_core_body_width_excludes_appendage():
     assert corrected.minor_axis_length_px < naive.minor_axis_length_px * 0.95
 
 
+def test_length_line_endpoints_are_inside_the_mask():
+    """A real bug: with an asymmetric shape (e.g. an atria lobe reaching
+    higher on one side than the shape's overall center), a length line
+    drawn at the bounding box's center column could start/end on a
+    background pixel -- visibly poking out past the green contour, since
+    the true topmost/bottommost rows don't occur at that column. The line
+    must be drawn from a column that actually contains both endpoints."""
+    mask = _mask_with_appendage(body_width=200, body_height=400, appendage_extra=150)
+    axes = axis_aligned_extent(mask)
+    (x1, y1), (x2, y2) = axes.major_endpoints
+    assert mask[int(y1), int(x1)]
+    assert mask[int(y2), int(x2)]
+
+
+def test_low_confidence_orientation_flags_ambiguous_shapes():
+    """A shape with a clear, one-sided notch (like a real auricle) should be
+    a confident apex/base call; a shape with no notch at all anywhere (no
+    real evidence of which end is the base) should be flagged low-confidence
+    rather than silently guessing."""
+    notched = _mask_with_appendage(body_width=200, body_height=400, appendage_extra=150)
+    notched_img = np.stack([notched.astype("uint8") * 200] * 3, axis=-1)
+    confident_crop = rotate_for_display(notched_img, notched, orient_mode="apex_down")
+    assert not confident_crop.low_confidence_orientation
+
+    h, w = 500, 300
+    plain = np.zeros((h, w), dtype=bool)
+    rr, cc = ellipse(h // 2, w // 2, 200, 100, shape=plain.shape)
+    plain[rr, cc] = True
+    plain_img = np.stack([plain.astype("uint8") * 200] * 3, axis=-1)
+    ambiguous_crop = rotate_for_display(plain_img, plain, orient_mode="apex_down")
+    assert ambiguous_crop.low_confidence_orientation
+
+
 def test_manual_flip_inverts_orientation():
     crop_a, _ = _crop_for("apex_down", heart_major_px=220.0, heart_minor_px=160.0)
     img = make_synthetic_photo(heart_major_px=220.0, heart_minor_px=160.0)
