@@ -33,8 +33,7 @@ APP_TITLE = "Ying's Measurement Tool for Specimen"
 # style options. Hand-drawn Canvas shapes render identically on any Tk build.
 BG = "#FFFFFF"
 ACCENT = "#0080FE"
-ACCENT_LIGHT = "#89CFEF"
-FIELD_BORDER = "#B9DFF5"
+ACCENT_HOVER = "#0066CC"
 
 
 def _rounded_rect_points(x1, y1, x2, y2, r):
@@ -61,7 +60,7 @@ class RoundedButton(tk.Canvas):
     """
 
     def __init__(self, parent, text, command, width=110, height=34, radius=10,
-                 fill=ACCENT, hover=None, disabled_fill="#CFCFCF",
+                 fill=ACCENT, hover=ACCENT_HOVER, disabled_fill="#CFCFCF",
                  fg="white", font=("Arial", 13, "bold")):
         super().__init__(parent, width=width, height=height, bg=BG,
                           highlightthickness=0, bd=0, cursor="hand2")
@@ -74,7 +73,7 @@ class RoundedButton(tk.Canvas):
             _rounded_rect_points(1, 1, width - 1, height - 1, radius),
             smooth=True, fill=fill, outline=fill,
         )
-        self.create_text(width / 2, height / 2, text=text, fill=fg, font=font)
+        self._text_item = self.create_text(width / 2, height / 2, text=text, fill=fg, font=font)
         self.bind("<Button-1>", self._on_click)
         self.bind("<Enter>", self._on_enter)
         self.bind("<Leave>", self._on_leave)
@@ -97,26 +96,15 @@ class RoundedButton(tk.Canvas):
         self.itemconfig(self._shape, fill=fill, outline=fill)
         self.configure(cursor="hand2" if enabled else "arrow")
 
+    def set_text(self, text: str):
+        self.itemconfig(self._text_item, text=text)
 
-class RoundedField(tk.Canvas):
-    """A read-only, rounded-rectangle text display bound to a StringVar --
-    used for the input/output directory paths."""
 
-    def __init__(self, parent, textvariable, width=560, height=32, radius=9,
-                 fill="white", outline=FIELD_BORDER, font=("Arial", 11)):
-        super().__init__(parent, width=width, height=height, bg=BG,
-                          highlightthickness=0, bd=0)
-        self.create_polygon(
-            _rounded_rect_points(1, 1, width - 1, height - 1, radius),
-            smooth=True, fill=fill, outline=outline,
-        )
-        self._var = textvariable
-        self._text_id = self.create_text(width / 2, height / 2, text=textvariable.get(),
-                                          font=font, fill="black")
-        self._var.trace_add("write", self._on_change)
-
-    def _on_change(self, *_args):
-        self.itemconfig(self._text_id, text=self._var.get())
+def _short_name(path: str, max_len: int = 28) -> str:
+    name = Path(path).name or path
+    if len(name) > max_len:
+        name = name[: max_len - 1] + "…"
+    return name
 
 
 window = tk.Tk()
@@ -148,14 +136,15 @@ def selectInputClicked():
     chosen = filedialog.askdirectory()
     if chosen:
         inputDir.set(chosen)
+        inputSelectButton.set_text(f"Selected: {_short_name(chosen)}")
         print(chosen + " selected as input")
 
 
 row1 = _row(form)
 tk.Label(row1, text="Input Directory:", justify="right", width=16, bg=BG).pack(side="left")
-RoundedField(row1, textvariable=inputDir).pack(side="left", padx=6)
-RoundedButton(row1, text="Select", command=selectInputClicked, width=90, height=32,
-              fill=ACCENT_LIGHT, hover=ACCENT, fg="black").pack(side="left")
+inputSelectButton = RoundedButton(row1, text="Select Folder...", command=selectInputClicked,
+                                   width=220, height=32)
+inputSelectButton.pack(side="left", padx=6)
 
 # --------------------- Output directory ---------------------
 outputDir = tk.StringVar(value="None Selected (defaults to <input>/results)")
@@ -165,14 +154,15 @@ def selectOutputClicked():
     chosen = filedialog.askdirectory()
     if chosen:
         outputDir.set(chosen)
+        outputSelectButton.set_text(f"Selected: {_short_name(chosen)}")
         print(chosen + " selected as output")
 
 
 row2 = _row(form)
 tk.Label(row2, text="Output Directory:", justify="right", width=16, bg=BG).pack(side="left")
-RoundedField(row2, textvariable=outputDir).pack(side="left", padx=6)
-RoundedButton(row2, text="Select", command=selectOutputClicked, width=90, height=32,
-              fill=ACCENT_LIGHT, hover=ACCENT, fg="black").pack(side="left")
+outputSelectButton = RoundedButton(row2, text="Select Folder... (optional)", command=selectOutputClicked,
+                                    width=220, height=32)
+outputSelectButton.pack(side="left", padx=6)
 
 # --------------------- Specimen type ---------------------
 SPECIMEN_TYPES = {
@@ -265,7 +255,7 @@ def runButtonClicked():
 runFrame = tk.Frame(main, bg=BG)
 runFrame.pack(pady=(14, 0))  # centered by default
 runButton = RoundedButton(runFrame, text="Run", command=runButtonClicked, width=140, height=42,
-                           radius=12, fill=ACCENT, hover="#0066CC", font=("Arial", 16, "bold"))
+                           radius=12, font=("Arial", 16, "bold"))
 runButton.pack()
 
 
@@ -295,8 +285,7 @@ manualFrame = tk.Frame(main, bg=BG)
 manualFrame.pack(pady=(8, 0))
 RoundedButton(
     manualFrame, text="Manual Annotation (for images not captured well)...",
-    command=manualAnnotateClicked, width=420, height=32, fill=ACCENT_LIGHT,
-    hover=ACCENT, fg="black", font=("Arial", 12),
+    command=manualAnnotateClicked, width=420, height=32, font=("Arial", 12),
 ).pack()
 
 # Main
