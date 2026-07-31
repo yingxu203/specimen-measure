@@ -21,6 +21,9 @@ from tkinter import messagebox as msg
 sys.path.insert(0, str(Path(__file__).parent))
 
 from specimen_measure.cli import DEFAULT_PATTERN, run  # noqa: E402
+from merge_manual_annotations import merge_manual_annotations  # noqa: E402
+
+ANNOTATIONS_CSV = Path(__file__).parent / "annotation_reference" / "reference_annotations_v2_with_frame.csv"
 
 APP_TITLE = "Ying's Measurement Tool for Specimen"
 
@@ -355,10 +358,58 @@ def manualAnnotateClicked():
 
 
 manualFrame = tk.Frame(main, bg=BG)
-manualFrame.pack(pady=(8, 16))
+manualFrame.pack(pady=(8, 4))
 RoundedButton(
     manualFrame, text="Manual Annotation",
     command=manualAnnotateClicked, width=220, height=32, font=("Arial", 12),
+).pack()
+
+
+# ------------------- Merge manual annotations into results -------------------
+def _next_available_dir(base: Path) -> Path:
+    """Never overwrite a previous merge -- add _2, _3, ... if needed."""
+    if not base.exists():
+        return base
+    n = 2
+    while (candidate := base.parent / f"{base.name}_{n}").exists():
+        n += 1
+    return candidate
+
+
+def mergeAnnotationsClicked():
+    results_dir_str = filedialog.askdirectory(
+        title="Choose the results folder to merge manual annotations into (contains measurements.csv)",
+        initialdir=outputDir.get() if outputDir.get() != "None Selected (defaults to <input>/results)" else None,
+    )
+    if not results_dir_str:
+        return
+    results_dir = Path(results_dir_str)
+    if not (results_dir / "measurements.csv").exists():
+        msg.showinfo(message=f"No measurements.csv found in:\n{results_dir}")
+        return
+    if not ANNOTATIONS_CSV.exists():
+        msg.showinfo(message="No manual annotations found yet.\n\n"
+                              "Use the Manual Annotation button first, then come back to merge.")
+        return
+
+    output_dir = _next_available_dir(results_dir / "manual_merged")
+    try:
+        merged = merge_manual_annotations(results_dir, ANNOTATIONS_CSV, output_dir)
+    except Exception as exc:  # noqa: BLE001 - surface any failure to the user, do not crash the GUI
+        msg.showinfo(message=f"Merge failed:\n{exc}")
+        return
+
+    n_corrected = int(merged["manually_corrected"].sum())
+    msg.showinfo(message=f"Merged {n_corrected} manually-annotated image(s) into the results.\n\n"
+                          f"Saved to:\n{output_dir}")
+    subprocess.run(["open", str(output_dir)], check=False)
+
+
+mergeFrame = tk.Frame(main, bg=BG)
+mergeFrame.pack(pady=(0, 16))
+RoundedButton(
+    mergeFrame, text="Merge Manual Annotations Into Results",
+    command=mergeAnnotationsClicked, width=280, height=32, font=("Arial", 12),
 ).pack()
 
 # Size the window to exactly fit its content on first launch, rather than a
