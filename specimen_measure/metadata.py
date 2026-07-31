@@ -63,10 +63,24 @@ def parse_filename(filename: str) -> SpecimenInfo:
     if notes == "":
         notes = None
 
+    genotype = genotype_m.group(1).upper() if genotype_m else None
+    animal_id = animal_m.group(1).upper() if animal_m else None
+    if genotype is None and animal_id:
+        # Some filenames (mostly "_SV" duplicates) drop the standalone
+        # genotype word but keep the animal ID, which itself encodes the
+        # genotype by the same lab convention used for axis-line coloring:
+        # O* (OM/OF/OX) animals are OX genotype, W* (WM/WF/WT) are WT.
+        # Verified to hold with zero exceptions across the full dataset
+        # this was built against before relying on it as a fallback.
+        if animal_id[0] == "O":
+            genotype = "OX"
+        elif animal_id[0] == "W":
+            genotype = "WT"
+
     return SpecimenInfo(
-        genotype=genotype_m.group(1).upper() if genotype_m else None,
+        genotype=genotype,
         treatment=re.sub(r"\s+", " ", treatment_m.group(1)).upper() if treatment_m else None,
-        animal_id=animal_m.group(1).upper() if animal_m else None,
+        animal_id=animal_id,
         view=view_m.group(1).upper() if view_m else None,
         replicate=int(rep_m.group(1)) if rep_m else None,
         cohort=int(cohort_m.group(1)) if cohort_m else None,

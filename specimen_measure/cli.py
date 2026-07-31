@@ -13,6 +13,7 @@ import pandas as pd
 
 from .contact_sheet import build_overlay_pdf
 from .measure import MIN_CONFIDENT_TICKS, measure_file
+from .metadata import parse_filename
 from .rotate import OrientMode
 
 DEFAULT_PATTERN = "*.tif"
@@ -48,6 +49,23 @@ def summarize_by_animal_and_view(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _flip_key(filename: str) -> tuple[str | None, str | None, int | None]:
+    info = parse_filename(filename)
+    return (info.animal_id, info.view, info.replicate)
+
+
+def expand_force_flip(filenames: list[str], all_files: list[Path]) -> set[str]:
+    """Given exact filenames known to need a manual orientation flip, also
+    flip any other file sharing the same (animal_id, view, replicate) --
+    e.g. a "_SV" duplicate export of the same photo -- so a correction only
+    has to be given once per physical photo, not once per file variant.
+    """
+    keys = {_flip_key(f) for f in filenames}
+    keys.discard((None, None, None))
+    matched = {f.name for f in all_files if _flip_key(f.name) in keys}
+    return matched | set(filenames)
+
+
 def run(
     input_dir: Path,
     output_dir: Path,
@@ -56,10 +74,13 @@ def run(
     overlays: bool,
     orient_mode: OrientMode = "apex_down",
     use_genotype_colors: bool = True,
+    force_flip: list[str] | None = None,
 ) -> pd.DataFrame:
     files = find_images(input_dir, pattern)
     if not files:
         raise SystemExit(f"No files matching {pattern!r} found under {input_dir}")
+
+    flip_set = expand_force_flip(force_flip, files) if force_flip else set()
 
     output_dir.mkdir(parents=True, exist_ok=True)
     overlay_dir = output_dir / "overlays"
@@ -71,9 +92,12 @@ def run(
         result = measure_file(
             path, ruler_side=ruler_side, overlay_path=overlay_path,
             orient_mode=orient_mode, use_genotype_colors=use_genotype_colors,
+            manual_flip=path.name in flip_set,
         )
         rows.append(result.to_row())
         status = "ok" if result.ok else f"FAILED: {result.error}"
+        if path.name in flip_set:
+            status += " (force-flipped)"
         print(f"{path.name}: {status}")
         if overlay_path is not None and overlay_path.exists():
             overlay_paths.append(overlay_path)
@@ -141,6 +165,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-genotype-colors", action="store_true",
                          help="Don't color axis lines by the OX/WT heart-study genotype convention; "
                               "use a single neutral color for all images.")
+    parser.add_argument("--force-flip", nargs="+", default=[], metavar="FILENAME",
+                         help="Filenames (apex_down mode) known to have the wrong automatic "
+                              "apex/base orientation -- flips these regardless of what the "
+                              "heuristic decides. Any other file sharing the same animal ID, "
+                              "view, and replicate number (e.g. a '_SV' duplicate export) is "
+                              "flipped too, so you only need to list a correction once per photo.")
     args = parser.parse_args(argv)
 
     if not args.input_dir.is_dir():
@@ -149,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     run(
         args.input_dir, args.output_dir, args.pattern, args.ruler_side, overlays=not args.no_overlays,
         orient_mode=args.orientation, use_genotype_colors=not args.no_genotype_colors,
+        force_flip=args.force_flip,
     )
     return 0
 

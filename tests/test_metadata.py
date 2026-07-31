@@ -22,6 +22,20 @@ def test_parses_notes_and_sv_variant():
     assert info_sv.animal_id == "WF15"
 
 
+def test_genotype_falls_back_to_animal_id_prefix():
+    """Some "_SV" duplicate filenames drop the standalone genotype word but
+    keep the animal ID, which encodes genotype by the same O*/W* convention
+    used for axis-line coloring -- confirmed to have found the axis lines
+    on such a file rendering in the fallback (unclassified) color instead
+    of the correct genotype color."""
+    info = parse_filename("AKAP12 osmotic pump treated 1_ISO OX14_BACK-1_ch00_SV.tif")
+    assert info.genotype == "OX"
+    assert info.animal_id == "OX14"
+
+    info_w = parse_filename("AKAP12 osmotic pump treated 1_ISO WM9_BACK-1_ch00_SV.tif")
+    assert info_w.genotype == "WT"
+
+
 def test_missing_fields_are_none_not_raising():
     info = parse_filename("some_unrelated_filename.tif")
     assert info.genotype is None

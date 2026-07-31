@@ -115,6 +115,14 @@ automatic result:
   `final_long_axis_mm`/`final_short_axis_mm` (manual value if you supplied
   one, otherwise the automatic value) without discarding the automatic
   number.
+- For a batch/CLI workflow, `--force-flip FILENAME [FILENAME ...]` applies
+  the same orientation flip without touching the UI: give it the exact
+  filename(s) you've confirmed are upside down (check the overlay first —
+  the apex/base heuristic can be *confidently* wrong, not just borderline,
+  so don't apply a correction without looking). Any other file sharing the
+  same animal ID, view, and replicate number (e.g. a `_SV` duplicate
+  export of the same photo) is flipped too, so a correction only needs to
+  be listed once per physical photo.
 
 ## Install
 
@@ -225,6 +233,12 @@ its pattern doesn't match, rather than raising, so a different naming
 convention (or one odd filename) never aborts a batch run; those columns
 will just come back blank. Extend the patterns in `metadata.py` for a new
 naming convention if you want them populated.
+
+If genotype isn't found directly (some `_SV` duplicate filenames drop the
+standalone genotype word but keep the animal ID) it falls back to the
+animal ID's first letter — `O*` (OM/OF/OX) → OX, `W*` (WM/WF/WT) → WT —
+the same convention already used for axis-line coloring, and confirmed to
+hold with zero exceptions across the dataset this was built against.
 
 ## Limitations
 
