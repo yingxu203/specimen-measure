@@ -14,16 +14,14 @@ file's own already-computed px_per_mm scale (rotating/cropping a photo
 doesn't change its scale, so this is correct whether you annotated the raw
 photo or its rotated/cropped overlay).
 
-The manual FRAME (2 corner clicks) only gives a bounding box, not the true
-segmented outline, so the area computed from it is an approximation (it
-will typically overestimate area for a non-rectangular specimen) -- rows
-corrected this way are flagged in a new "manually_corrected" column and a
-note is added, so this is visible rather than silently looking as precise
-as the automatic segmentation-based area.
+The manual FRAME is a hand-traced outline (however many points you clicked
+around the tissue), so its area is the true polygon area, not a bounding-box
+approximation. Rows corrected this way are flagged in a new
+"manually_corrected" column and a note is added.
 
 USAGE:
     python merge_manual_annotations.py --results-dir results/v9 --output-dir results/v9_manual_merged
-    (uses annotation_reference/reference_annotations_v2_with_frame.csv by default)
+    (uses annotation_reference/reference_annotations_v3_polygon_frame.csv by default)
 """
 
 import argparse
@@ -34,10 +32,21 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from annotate_specimen import polygon_area_px  # noqa: E402
 from specimen_measure.cli import summarize_by_animal_and_view  # noqa: E402
 
-DEFAULT_ANNOTATIONS_CSV = Path("annotation_reference/reference_annotations_v2_with_frame.csv")
-CORRECTION_NOTE = "manually re-measured (area is bounding-box approx, not true segmented area)"
+DEFAULT_ANNOTATIONS_CSV = Path("annotation_reference/reference_annotations_v3_polygon_frame.csv")
+CORRECTION_NOTE_TEMPLATE = "manually re-measured (area from a {n}-point hand-traced outline)"
+
+
+def _parse_frame_points(frame_points_px) -> list[tuple[float, float]]:
+    if not isinstance(frame_points_px, str) or not frame_points_px.strip():
+        return []
+    points = []
+    for part in frame_points_px.split(";"):
+        x_str, y_str = part.split(",")
+        points.append((float(x_str), float(y_str)))
+    return points
 
 
 def _norm_stem(filename: str) -> str:
@@ -77,16 +86,18 @@ def merge_manual_annotations(
 
         results.loc[idx, "long_axis_mm"] = arow["length_px"] / px_per_mm
         results.loc[idx, "short_axis_mm"] = arow["width_px"] / px_per_mm
-        if pd.notna(arow.get("frame_width_px")) and pd.notna(arow.get("frame_height_px")):
-            results.loc[idx, "area_mm2"] = (
-                arow["frame_width_px"] * arow["frame_height_px"] / (px_per_mm ** 2)
-            )
+
+        frame_points = _parse_frame_points(arow.get("frame_points_px"))
+        note = CORRECTION_NOTE_TEMPLATE.format(n=len(frame_points))
+        if len(frame_points) >= 3:
+            area_px = polygon_area_px(frame_points)
+            results.loc[idx, "area_mm2"] = area_px / (px_per_mm ** 2)
+        else:
+            note += " -- no outline traced, area_mm2 left as the automatic value"
+
         results.loc[idx, "manually_corrected"] = True
         prior_notes = results.loc[idx, "notes"]
-        results.loc[idx, "notes"] = (
-            f"{prior_notes}; {CORRECTION_NOTE}" if pd.notna(prior_notes) and prior_notes
-            else CORRECTION_NOTE
-        )
+        results.loc[idx, "notes"] = f"{prior_notes}; {note}" if pd.notna(prior_notes) and prior_notes else note
 
     results = results.drop(columns=["_stem"])
 

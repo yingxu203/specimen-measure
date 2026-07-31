@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from specimen_measure.cli import DEFAULT_PATTERN, run  # noqa: E402
 from merge_manual_annotations import merge_manual_annotations  # noqa: E402
 
-ANNOTATIONS_CSV = Path(__file__).parent / "annotation_reference" / "reference_annotations_v2_with_frame.csv"
+ANNOTATIONS_CSV = Path(__file__).parent / "annotation_reference" / "reference_annotations_v3_polygon_frame.csv"
 
 APP_TITLE = "Ying's Measurement Tool for Specimen"
 
