@@ -25,10 +25,9 @@ from specimen_measure.cli import DEFAULT_PATTERN, run  # noqa: E402
 APP_TITLE = "Ying's Measurement Tool for Specimen"
 
 # A light, Finder-window-like background instead of Tk's default gray, with
-# a blue accent for the title/Run button.
+# a blue accent for the title text.
 BG = "#FFFFFF"
 ACCENT = "#0080FE"
-ACCENT_BUTTON = "#73C2FB"
 
 window = tk.Tk()
 window.title(APP_TITLE)
@@ -64,9 +63,9 @@ def selectInputClicked():
 
 row1 = _row(form)
 tk.Label(row1, text="Input Directory:", justify="right", width=16, bg=BG).pack(side="left")
-tk.Label(row1, textvariable=inputDir, font=("arial", 8), justify="center", bg="white", width=70,
-         relief="sunken", bd=1).pack(side="left", padx=6)
-tk.Button(row1, text="Select", command=selectInputClicked, width=10).pack(side="left")
+ttk.Entry(row1, textvariable=inputDir, justify="center", width=68, state="readonly").pack(
+    side="left", padx=6)
+ttk.Button(row1, text="Select", command=selectInputClicked, width=10).pack(side="left")
 
 # --------------------- Output directory ---------------------
 outputDir = tk.StringVar(value="None Selected (defaults to <input>/results)")
@@ -81,9 +80,9 @@ def selectOutputClicked():
 
 row2 = _row(form)
 tk.Label(row2, text="Output Directory:", justify="right", width=16, bg=BG).pack(side="left")
-tk.Label(row2, textvariable=outputDir, font=("arial", 8), justify="center", bg="white", width=70,
-         relief="sunken", bd=1).pack(side="left", padx=6)
-tk.Button(row2, text="Select", command=selectOutputClicked, width=10).pack(side="left")
+ttk.Entry(row2, textvariable=outputDir, justify="center", width=68, state="readonly").pack(
+    side="left", padx=6)
+ttk.Button(row2, text="Select", command=selectOutputClicked, width=10).pack(side="left")
 
 # --------------------- Specimen type ---------------------
 SPECIMEN_TYPES = {
@@ -175,10 +174,16 @@ def runButtonClicked():
 
 runFrame = tk.Frame(main, bg=BG)
 runFrame.pack(pady=(14, 0))  # centered by default
-runButton = tk.Button(runFrame, text="Run", font=("Arial", 16, "bold"), width=12,
-                       bg=ACCENT_BUTTON, activebackground=ACCENT, fg="black",
-                       command=runButtonClicked)
-runButton.pack()
+# "Accent.TButton" is a built-in native style on macOS (Tk 8.6.10+) that
+# renders as a real rounded, filled-blue system button -- plain tk.Button
+# ignores custom bg colors under macOS's native (Aqua) button rendering, so
+# a manually-colored button would just stay gray.
+try:
+    runButton = ttk.Button(runFrame, text="Run", width=12, command=runButtonClicked,
+                            style="Accent.TButton")
+except tk.TclError:
+    runButton = ttk.Button(runFrame, text="Run", width=12, command=runButtonClicked)
+runButton.pack(ipady=4)
 
 
 # ----------------------- Manual annotation ----------------------------
@@ -205,7 +210,7 @@ def manualAnnotateClicked():
 
 manualFrame = tk.Frame(main, bg=BG)
 manualFrame.pack(pady=(8, 0))
-tk.Button(
+ttk.Button(
     manualFrame, text="Manual Annotation (for images not captured well)...",
     command=manualAnnotateClicked,
 ).pack()
