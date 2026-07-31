@@ -135,20 +135,38 @@ numpy/scipy/scikit-image/pillow/pandas/tifffile/streamlit/streamlit-image-coordi
 
 ## UI (for non-coders)
 
+Two options, depending on whether you want it in a browser tab or a plain
+desktop window:
+
+**Desktop window** ([`specimen_measure_gui.py`](specimen_measure_gui.py)) — a native pop-up
+window (Tkinter), no browser involved:
+
+```bash
+python3 specimen_measure_gui.py
+```
+
+or, on macOS, just double-click [`run_gui.command`](run_gui.command) in Finder. Pick an input
+folder (and optionally an output folder — defaults to `<input>/results`),
+choose specimen type and whether to use genotype colors, hit Run. A popup
+tells you when it is done and opens the results folder. This is the
+simplest option if you just want to point at a folder and get CSVs +
+overlays + the combined PDF, without needing the interactive review
+features below.
+
+**Browser app** ([`app.py`](app.py)) — adds interactive review on top: drag-and-drop or
+folder input, a results table, flipping through overlay images with a
+one-click orientation flip and click-to-measure override per image (see
+[Manual correction](#manual-correction)), and CSV downloads.
+
 ```bash
 streamlit run app.py
 ```
 
 or, on macOS, just double-click [`run_app.command`](run_app.command) in Finder — it installs
-dependencies if needed and opens the app in your browser. No command line
-required.
+dependencies if needed and opens the app in your browser.
 
-In the app you can drag-and-drop photos or point it at a local folder path;
-choose the orientation convention and whether to use the heart genotype
-color convention; run the measurement; browse results in a table; flip
-through the rotated overlay images (with a one-click flip and click-to-measure
-override per image, see [Manual correction](#manual-correction)); and
-download the CSVs — everything the CLI produces, with no code.
+Both installs dependencies automatically and need no command line
+experience beyond double-clicking a file in Finder.
 
 ## Usage (command line)
 
