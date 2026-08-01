@@ -33,6 +33,11 @@ CONTROLS (while annotating):
     - Press 'q' to save and move to the next image (needs the outline
       closed and both length/width drawn).
     - Close the window / press 'q' before finishing to SKIP (not saved).
+    - Scroll the mouse wheel / trackpad to zoom in/out, centered on the
+      cursor -- the heart is often small in the full photo, zoom in for
+      precise clicks.
+    - Arrow keys pan the view once zoomed in. Press 'r' to reset back to
+      the full image.
 
 Already-annotated images are automatically skipped on repeat runs, so you
 can stop and resume this process across multiple sessions.
@@ -45,6 +50,12 @@ import sys
 import matplotlib.pyplot as plt
 from matplotlib import image as mpimg
 from matplotlib.patches import Polygon
+
+# Matplotlib binds the left/right arrow keys to its own toolbar back/forward
+# view-history navigation by default, which would fight with our own
+# arrow-key panning below (both would respond to the same keypress).
+plt.rcParams["keymap.back"] = []
+plt.rcParams["keymap.forward"] = []
 
 OUTPUT_DIR = "annotation_reference"
 # v3: the frame is now a hand-traced polygon (true area) instead of a
@@ -61,6 +72,8 @@ FIELDNAMES = [
 ]
 
 MIN_FRAME_POINTS = 3
+ZOOM_SCALE = 1.3
+PAN_FRACTION = 0.15
 
 
 def polygon_area_px(points):
@@ -105,12 +118,45 @@ class LineAnnotator:
         self.length_points = []
         self.width_points = []
         self.finished = False
+        self._view_initialized = False  # False until the user has zoomed/panned
 
-        self.fig, self.ax = plt.subplots(figsize=(8, 8))
+        self.fig, self.ax = plt.subplots(figsize=(10, 10))
         self.cid_click = self.fig.canvas.mpl_connect("button_press_event", self.on_click)
         self.cid_key = self.fig.canvas.mpl_connect("key_press_event", self.on_key)
+        self.cid_scroll = self.fig.canvas.mpl_connect("scroll_event", self.on_scroll)
         self.redraw()
         plt.show()
+
+    def on_scroll(self, event):
+        if event.inaxes != self.ax or event.xdata is None:
+            return
+        factor = 1 / ZOOM_SCALE if event.button == "up" else ZOOM_SCALE
+        xlim = self.ax.get_xlim()
+        ylim = self.ax.get_ylim()
+        x, y = event.xdata, event.ydata
+        new_w = (xlim[1] - xlim[0]) * factor
+        new_h = (ylim[1] - ylim[0]) * factor
+        relx = (x - xlim[0]) / (xlim[1] - xlim[0])
+        rely = (y - ylim[0]) / (ylim[1] - ylim[0])
+        self.ax.set_xlim(x - new_w * relx, x + new_w * (1 - relx))
+        self.ax.set_ylim(y - new_h * rely, y + new_h * (1 - rely))
+        self._view_initialized = True
+        self.fig.canvas.draw()
+
+    def _pan(self, direction):
+        xlim = self.ax.get_xlim()
+        ylim = self.ax.get_ylim()
+        dx = (xlim[1] - xlim[0]) * PAN_FRACTION
+        dy = (ylim[1] - ylim[0]) * PAN_FRACTION
+        if direction == "left":
+            self.ax.set_xlim(xlim[0] - dx, xlim[1] - dx)
+        elif direction == "right":
+            self.ax.set_xlim(xlim[0] + dx, xlim[1] + dx)
+        elif direction == "up":
+            self.ax.set_ylim(ylim[0] - dy, ylim[1] - dy)
+        elif direction == "down":
+            self.ax.set_ylim(ylim[0] + dy, ylim[1] + dy)
+        self._view_initialized = True
 
     def on_click(self, event):
         if event.inaxes != self.ax or self.stage == "done":
@@ -135,6 +181,10 @@ class LineAnnotator:
             self._undo()
         elif event.key == "n" and self.stage == "frame" and len(self.frame_points) >= MIN_FRAME_POINTS:
             self.stage = "length"
+        elif event.key == "r":
+            self._view_initialized = False  # redraw() below falls back to the full image
+        elif event.key in ("left", "right", "up", "down"):
+            self._pan(event.key)
         elif event.key == "q":
             if self.stage == "done":
                 self.finished = True
@@ -161,8 +211,17 @@ class LineAnnotator:
                 self.width_points.pop()
 
     def redraw(self):
+        # ax.clear() below wipes the current zoom/pan too, so save and
+        # restore it around every redraw (points get added, undone, etc. --
+        # a wiped view on every click would make zooming pointless).
+        xlim = self.ax.get_xlim() if self._view_initialized else None
+        ylim = self.ax.get_ylim() if self._view_initialized else None
+
         self.ax.clear()
         self.ax.imshow(self.image)
+        if xlim is not None:
+            self.ax.set_xlim(xlim)
+            self.ax.set_ylim(ylim)
 
         if self.frame_points:
             xs = [p[0] for p in self.frame_points]
@@ -194,16 +253,19 @@ class LineAnnotator:
         self.fig.canvas.draw()
 
     def _status_text(self):
+        zoom_hint = "  |  scroll = zoom, arrows = pan, 'r' = reset view"
         if self.stage == "frame":
             n = len(self.frame_points)
             need = "" if n >= MIN_FRAME_POINTS else f" (need {MIN_FRAME_POINTS - n} more)"
             return (f"click OUTLINE points (green), {n} so far{need}  |  "
-                    f"'n' = finish outline  |  'u' = undo  |  'q' = save+next")
+                    f"'n' = finish outline  |  'u' = undo  |  'q' = save+next{zoom_hint}")
         if self.stage == "length":
-            return f"click point {len(self.length_points) + 1}/2 for LENGTH (red)  |  'u' = undo  |  'q' = save+next"
+            return (f"click point {len(self.length_points) + 1}/2 for LENGTH (red)  |  "
+                    f"'u' = undo  |  'q' = save+next{zoom_hint}")
         if self.stage == "width":
-            return f"click point {len(self.width_points) + 1}/2 for WIDTH (blue)  |  'u' = undo  |  'q' = save+next"
-        return "done -- press 'q' to save"
+            return (f"click point {len(self.width_points) + 1}/2 for WIDTH (blue)  |  "
+                    f"'u' = undo  |  'q' = save+next{zoom_hint}")
+        return f"done -- press 'q' to save{zoom_hint}"
 
     def get_row(self, filename):
         if not self.finished:
