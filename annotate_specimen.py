@@ -48,6 +48,7 @@ import os
 import sys
 
 import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib import image as mpimg
 from matplotlib.patches import Polygon
 
@@ -62,6 +63,7 @@ OUTPUT_DIR = "annotation_reference"
 # 2-corner bounding box (v2, area only approximate) -- a different file so
 # the two schemas (variable-length polygon vs. fixed rectangle) never mix.
 OUTPUT_CSV = os.path.join(OUTPUT_DIR, "reference_annotations_v3_polygon_frame.csv")
+OUTPUT_XLSX = os.path.join(OUTPUT_DIR, "reference_annotations_v3_polygon_frame.xlsx")
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tif", ".tiff")
 
 FIELDNAMES = [
@@ -104,6 +106,10 @@ def append_row(row):
         if is_new:
             writer.writeheader()
         writer.writerow(row)
+    # Keep an Excel version in sync too, same as the main measurement
+    # results -- rewritten in full each time since there's no cheap
+    # "append a row" for .xlsx like there is for a text CSV.
+    pd.read_csv(OUTPUT_CSV).to_excel(OUTPUT_XLSX, index=False)
 
 
 class LineAnnotator:
@@ -324,7 +330,7 @@ def main():
         annotated_count += 1
         print(f"  Saved. ({annotated_count} annotated this session)")
 
-    print(f"\nDone this session. Reference annotations saved to: {OUTPUT_CSV}")
+    print(f"\nDone this session. Reference annotations saved to:\n  {OUTPUT_CSV}\n  {OUTPUT_XLSX}")
 
 
 if __name__ == "__main__":
