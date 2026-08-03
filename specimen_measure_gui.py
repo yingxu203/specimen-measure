@@ -21,6 +21,9 @@ from tkinter import messagebox as msg
 sys.path.insert(0, str(Path(__file__).parent))
 
 from specimen_measure.cli import DEFAULT_PATTERN, run  # noqa: E402
+from compute_annotation_measurements import compute_annotation_measurements  # noqa: E402
+
+ANNOTATIONS_CSV = Path(__file__).parent / "annotation_reference" / "reference_annotations_v3_polygon_frame.csv"
 
 APP_TITLE = "Ying's Measurement Tool for Specimen"
 
@@ -355,10 +358,61 @@ def manualAnnotateClicked():
 
 
 manualFrame = tk.Frame(main, bg=BG)
-manualFrame.pack(pady=(8, 16))
+manualFrame.pack(pady=(8, 4))
 RoundedButton(
     manualFrame, text="Manual Annotation",
     command=manualAnnotateClicked, width=220, height=32, font=("Arial", 12),
+).pack()
+
+
+# --------------------- Compute mm for manual annotations ---------------------
+def computeAnnotationMmClicked():
+    """Converts the manual annotation tool's pixel clicks into real
+    length_mm/width_mm/area_mm2, using each file's own ruler calibration
+    looked up by filename from an existing measurements.csv. Only updates
+    the annotation file itself -- never the original batch results.
+    """
+    if not ANNOTATIONS_CSV.exists():
+        msg.showinfo(message="No manual annotations found yet.\n\n"
+                              "Use the Manual Annotation button first, then come back to compute mm.")
+        return
+    results_dir_str = filedialog.askdirectory(
+        title="Choose the results folder with the ruler calibration for these photos "
+              "(contains measurements.csv)",
+        initialdir=outputDir.get() if outputDir.get() != "None Selected (defaults to <input>/results)" else None,
+    )
+    if not results_dir_str:
+        return
+    results_csv = Path(results_dir_str) / "measurements.csv"
+    if not results_csv.exists():
+        msg.showinfo(message=f"No measurements.csv found in:\n{results_dir_str}")
+        return
+
+    try:
+        ann, unmatched = compute_annotation_measurements(ANNOTATIONS_CSV, results_csv)
+    except Exception as exc:  # noqa: BLE001 - surface any failure to the user, do not crash the GUI
+        msg.showinfo(message=f"Could not compute mm values:\n{exc}")
+        return
+
+    xlsx_path = ANNOTATIONS_CSV.with_suffix(".xlsx")
+    ann.to_csv(ANNOTATIONS_CSV, index=False)
+    ann.to_excel(xlsx_path, index=False)
+
+    n_ok = len(ann) - len(unmatched)
+    low_conf = int(ann["low_confidence_calibration"].fillna(False).sum())
+    summary = f"Computed mm/area for {n_ok}/{len(ann)} annotated image(s)."
+    if low_conf:
+        summary += f"\n{low_conf} used a low-confidence calibration (mm values may be off by ~10-20%)."
+    if unmatched:
+        summary += f"\n{len(unmatched)} annotation(s) had no matching file in that results folder."
+    msg.showinfo(message=f"{summary}\n\nUpdated:\n{ANNOTATIONS_CSV}\n{xlsx_path}")
+
+
+mmFrame = tk.Frame(main, bg=BG)
+mmFrame.pack(pady=(0, 16))
+RoundedButton(
+    mmFrame, text="Compute mm for Annotations",
+    command=computeAnnotationMmClicked, width=260, height=32, font=("Arial", 12),
 ).pack()
 
 # Size the window to exactly fit its content on first launch, rather than a
