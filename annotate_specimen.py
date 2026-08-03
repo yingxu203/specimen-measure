@@ -47,6 +47,9 @@ import csv
 import os
 import sys
 
+import tkinter as tk
+from tkinter import messagebox
+
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib import image as mpimg
@@ -331,6 +334,21 @@ def main():
         print(f"  Saved. ({annotated_count} annotated this session)")
 
     print(f"\nDone this session. Reference annotations saved to:\n  {OUTPUT_CSV}\n  {OUTPUT_XLSX}")
+    _show_completion_popup(annotated_count)
+
+
+def _show_completion_popup(annotated_count):
+    root = tk.Tk()
+    root.withdraw()
+    if annotated_count:
+        message = (
+            f"{annotated_count} image(s) annotated this session.\n\n"
+            f"Results saved to:\n{os.path.abspath(OUTPUT_CSV)}\n{os.path.abspath(OUTPUT_XLSX)}"
+        )
+    else:
+        message = "No new annotations were saved this session."
+    messagebox.showinfo("Annotation Complete", message)
+    root.destroy()
 
 
 if __name__ == "__main__":
