@@ -38,14 +38,20 @@ def _norm_stem(filename: str) -> str:
     return stem.lower()
 
 
+def load_calibration_lookup(results_csv: Path) -> pd.DataFrame:
+    """Returns a DataFrame indexed by normalized filename stem, with
+    px_per_mm / low_confidence_calibration columns, for looking up one
+    file's calibration at a time (e.g. live during annotation)."""
+    results = pd.read_csv(results_csv)
+    results["_stem"] = results["filename"].map(_norm_stem)
+    return results.drop_duplicates("_stem").set_index("_stem")[["px_per_mm", "low_confidence_calibration"]]
+
+
 def compute_annotation_measurements(annotations_csv: Path, results_csv: Path) -> tuple[pd.DataFrame, list[str]]:
     ann = pd.read_csv(annotations_csv)
-    results = pd.read_csv(results_csv)
+    lookup = load_calibration_lookup(results_csv)
 
     ann["_stem"] = ann["filename"].map(_norm_stem)
-    results["_stem"] = results["filename"].map(_norm_stem)
-    lookup = results.drop_duplicates("_stem").set_index("_stem")[["px_per_mm", "low_confidence_calibration"]]
-
     ann = ann.join(lookup, on="_stem")
     unmatched = ann.loc[ann["px_per_mm"].isna(), "filename"].tolist()
 

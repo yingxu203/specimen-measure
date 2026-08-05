@@ -1,8 +1,41 @@
-from annotate_specimen import LineAnnotator, polygon_area_px
+import pandas as pd
+
+from annotate_specimen import LineAnnotator, _fill_mm_columns, polygon_area_px
 
 
 def test_polygon_area_of_a_known_rectangle():
     assert polygon_area_px([(0, 0), (10, 0), (10, 5), (0, 5)]) == 50.0
+
+
+def test_fill_mm_columns_computes_from_matching_calibration():
+    calibration = pd.DataFrame(
+        [{"px_per_mm": 20.0, "low_confidence_calibration": False}],
+        index=pd.Index(["sample_wt01_front-1_ch00"], name="_stem"),
+    )
+    row = {"length_px": 200.0, "width_px": 100.0, "frame_area_px": 20000.0}
+    row = _fill_mm_columns(row, "sample_WT01_FRONT-1_ch00.tif", calibration)
+    assert row["length_mm"] == 10.0
+    assert row["width_mm"] == 5.0
+    assert row["area_mm2"] == 50.0
+    assert row["low_confidence_calibration"] is False
+
+
+def test_fill_mm_columns_leaves_blank_without_a_match():
+    calibration = pd.DataFrame(
+        [{"px_per_mm": 20.0, "low_confidence_calibration": False}],
+        index=pd.Index(["unrelated_file"], name="_stem"),
+    )
+    row = {"length_px": 200.0, "width_px": 100.0, "frame_area_px": 20000.0}
+    row = _fill_mm_columns(row, "sample_WT01_FRONT-1_ch00.tif", calibration)
+    assert row["length_mm"] is None
+    assert row["width_mm"] is None
+    assert row["area_mm2"] is None
+
+
+def test_fill_mm_columns_leaves_blank_without_any_calibration_loaded():
+    row = {"length_px": 200.0, "width_px": 100.0, "frame_area_px": 20000.0}
+    row = _fill_mm_columns(row, "sample_WT01_FRONT-1_ch00.tif", None)
+    assert row["length_mm"] is None
 
 
 def test_polygon_area_needs_at_least_three_points():

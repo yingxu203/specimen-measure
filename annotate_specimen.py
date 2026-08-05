@@ -17,9 +17,16 @@ For each image in a folder, this tool lets you:
   4. Save all three as pixel coordinates (+ pixel distances/area) to a
      reference CSV
 
+If --results-csv points at an existing measurements.csv from a
+specimen_measure batch run, each annotated file's own already-known
+px_per_mm ruler calibration is looked up by filename automatically, so
+length_mm / width_mm / area_mm2 are filled in as you go -- no separate
+step needed afterward. Without it, only the pixel columns are saved.
+
 USAGE:
     python annotate_specimen.py "/path/to/image/folder"
     python annotate_specimen.py "/path/to/image/folder" specific_file.png
+    python annotate_specimen.py "/path/to/image/folder" --results-csv results/v9/measurements.csv
 
 CONTROLS (while annotating):
     - Left-click on the image to add a point.
@@ -43,9 +50,11 @@ Already-annotated images are automatically skipped on repeat runs, so you
 can stop and resume this process across multiple sessions.
 """
 
+import argparse
 import csv
 import os
 import sys
+from pathlib import Path
 
 import tkinter as tk
 from tkinter import messagebox
@@ -54,6 +63,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib import image as mpimg
 from matplotlib.patches import Polygon
+
+from compute_annotation_measurements import _norm_stem, load_calibration_lookup
 
 # Matplotlib binds the left/right arrow keys to its own toolbar back/forward
 # view-history navigation by default, which would fight with our own
@@ -74,6 +85,7 @@ FIELDNAMES = [
     "frame_points_px", "frame_area_px",
     "length_x1", "length_y1", "length_x2", "length_y2", "length_px",
     "width_x1", "width_y1", "width_x2", "width_y2", "width_px",
+    "length_mm", "width_mm", "area_mm2", "low_confidence_calibration",
 ]
 
 MIN_FRAME_POINTS = 3
@@ -295,13 +307,44 @@ class LineAnnotator:
         }
 
 
-def main():
-    if len(sys.argv) < 2:
-        print('Usage: python annotate_specimen.py "<path_to_image_folder>" [optional_specific_filename]')
-        return
+def _fill_mm_columns(row, filename, calibration):
+    """Adds length_mm/width_mm/area_mm2 to `row` using the given file's
+    px_per_mm calibration, if a lookup was loaded and it has a match.
+    Left as None (blank in the CSV) if no calibration is available."""
+    stem = _norm_stem(filename)
+    if calibration is not None and stem in calibration.index:
+        px_per_mm = calibration.loc[stem, "px_per_mm"]
+        row["length_mm"] = row["length_px"] / px_per_mm
+        row["width_mm"] = row["width_px"] / px_per_mm
+        row["area_mm2"] = row["frame_area_px"] / (px_per_mm ** 2)
+        row["low_confidence_calibration"] = bool(calibration.loc[stem, "low_confidence_calibration"])
+    else:
+        row["length_mm"] = row["width_mm"] = row["area_mm2"] = row["low_confidence_calibration"] = None
+    return row
 
-    input_dir = sys.argv[1]
-    target_file = sys.argv[2] if len(sys.argv) > 2 else None
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("input_dir", help="Folder of images to annotate.")
+    parser.add_argument("target_file", nargs="?", default=None,
+                         help="Annotate just this one file instead of the whole folder.")
+    parser.add_argument("--results-csv", type=Path, default=None,
+                         help="An existing measurements.csv to look up each photo's ruler "
+                              "calibration from, so length_mm/width_mm/area_mm2 are computed "
+                              "automatically as you annotate.")
+    args = parser.parse_args()
+
+    input_dir = args.input_dir
+    target_file = args.target_file
+
+    calibration = None
+    if args.results_csv:
+        if args.results_csv.exists():
+            calibration = load_calibration_lookup(args.results_csv)
+            print(f"Loaded ruler calibration from {args.results_csv} for {len(calibration)} file(s).")
+        else:
+            print(f"WARNING: --results-csv {args.results_csv} not found -- "
+                  f"length_mm/width_mm/area_mm2 will be left blank.")
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     files = sorted(f for f in os.listdir(input_dir) if f.lower().endswith(IMAGE_EXTENSIONS))
@@ -314,6 +357,7 @@ def main():
         print(f"Annotating single file: {target_file}")
 
     annotated_count = 0
+    no_calibration = []
     for file in files:
         if not target_file and already_annotated(file):
             print(f"Skipping {file} (already annotated)")
@@ -329,15 +373,23 @@ def main():
             print(f"  Skipped {file} (annotation incomplete or window closed early)")
             continue
 
+        row = _fill_mm_columns(row, file, calibration)
+        if row["length_mm"] is None:
+            no_calibration.append(file)
         append_row(row)
         annotated_count += 1
         print(f"  Saved. ({annotated_count} annotated this session)")
 
     print(f"\nDone this session. Reference annotations saved to:\n  {OUTPUT_CSV}\n  {OUTPUT_XLSX}")
-    _show_completion_popup(annotated_count)
+    if no_calibration:
+        print(f"{len(no_calibration)} image(s) had no matching calibration "
+              f"(length_mm/width_mm/area_mm2 left blank):")
+        for fn in no_calibration:
+            print(f"    {fn}")
+    _show_completion_popup(annotated_count, no_calibration)
 
 
-def _show_completion_popup(annotated_count):
+def _show_completion_popup(annotated_count, no_calibration):
     root = tk.Tk()
     root.withdraw()
     if annotated_count:
@@ -345,6 +397,11 @@ def _show_completion_popup(annotated_count):
             f"{annotated_count} image(s) annotated this session.\n\n"
             f"Results saved to:\n{os.path.abspath(OUTPUT_CSV)}\n{os.path.abspath(OUTPUT_XLSX)}"
         )
+        if no_calibration:
+            message += (
+                f"\n\n{len(no_calibration)} of these had no matching ruler calibration, "
+                f"so length_mm/width_mm/area_mm2 were left blank for them."
+            )
     else:
         message = "No new annotations were saved this session."
     messagebox.showinfo("Annotation Complete", message)
